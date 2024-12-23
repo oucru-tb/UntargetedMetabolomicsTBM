@@ -1,0 +1,1685 @@
+---
+title: "Metabolites_Paper_tab_Fig_19_Nov_24_final"
+author: "Triet Thai"
+date: "2024-11-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE)
+
+library(dplyr)
+library(MASS)
+library(parallel)
+library(dplyr)
+library(readxl)
+library(writexl)
+library(survival)
+library(glmnet)
+library(stabs)
+library(tidyverse)
+library(magrittr)
+library(Hmisc)
+library(gtsummary)
+library(WGCNA)
+library(ggcorrplot)
+library(scales)
+library(gridExtra)
+library(ggcorrplot)
+library(broom)
+library(ggpubr)
+
+source("Rfunctions/glmnet.R")
+source("Rfunctions/GRaFo.R")
+source("Rfunctions/cforest.R")
+source("Rfunctions/glm.R")
+source("Rfunctions/additional_functions.R")
+
+path_input  <- 'C:/Users/triettm/OneDrive - Oxford University Clinical Research Unit/#OUCRU-TB/#oucru-tb/ultimate_untargeted_metabolites/raw_data'
+path_output <- "C:/Users/triettm/OneDrive - Oxford University Clinical Research Unit/#OUCRU-TB/#oucru-tb/ultimate_untargeted_metabolites/results/Version2_1_Dec/Nov19_final/update"
+path_code   <- 'W:/#oucru-tb/ultimate_untargeted_metabolites/R_codes'
+
+mcore<-1
+```
+
+## Introduction
+
+This markdown file contains the code to generate figures in Metabolites Paper.
+
+Main figures include:
+
+-   **Figure 1A: Relationship between metabolite abundance (log2 transformed) and estimated mortality (logisticcurve)**
+-   **Figure 1B: Correlation plot for the 10 identified metabolites with Spearman's correlations using hierarchical clustering**
+-   **Figure 1C: Violin plots show the distribution for the identified metabolites per patient group: TBM, CM, BM, and NIC.**
+-   **Figure 2A: Stability variable selection through multivariable analysis**
+-   **Figure 2B: The scatter plot visualized TBM patients following their log2-transformed CSF tryptophan and FA 8:0; 3OH concentrations, colored according to their day 60 outcome**
+-   Figure 2C: Causal diagram showing the hypothesized relationship between CSF metabolites, TBM severity and mortality
+-   **Figure 2D: Forest plots visualizing the estimates of direct and indirect impact of all top-hit metabolites on mortality**
+-   Figure 3: Log2 fold changes for TBM patients vs. and non-infectious controls (NIC) in CSF and serum for top-hits following a previous cohort (van Laarhoven et al., 2018).
+-   **Figure 4: Metabolite clustering and correlation with clinical characteristics.**
+-   Figure 5: Diagram on dysregulated neuronal beta-oxidation as a source of the hydroxylated fatty acids that were associated to increased TBM mortality.
+
+Supplementary figures include:
+
+-   **Figure S1A: Spearman correlations and clustering of pre-treatment CSF metabolites**
+-   **Figure S1B: Metabolite abundance ratio of TBM vs. non-infectious control**
+-   **Figure S1C: Principal component projection of metabolite profiles in patients with TBM, bacterial meningitis, cryptococcal meningitis, and non-infectious controls**
+-   **Figure S1D: Bi-directional ranking metabolites with regard to the association with two month mortality**
+-   **Figure S1E: Ranking and forest plot of top-ranking metabolites.**
+-   Figure S2.1: Abundances of available fatty acids in CSF and serum of TBM patients and non-infectious controls (NIC) and Spearman correlations with clinical parameters
+-   Figure S2.2: Abundances of available carnitines in CSF and serum of TBM patients and non-infectious controls (NIC) and Spearman correlations with clinical parameters
+-   Figure S3: Analysis workflow diagram
+-   Figure S4: LC-MS-based analytical platform
+
+## Main figures
+
+### Figure 1: Pre-treatment metabolites and TBM two-month mortality and comparison with other patient groups
+
+#### Figure 1A:
+
+```{r}
+library(cowplot)
+library(dplyr)
+
+Metabolites <- Metabol_tophit_names_combined
+names_ID$Metabolite<-ifelse(names_ID$Metabolite=="Unknown_of_interest","Unknown compound",names_ID$Metabolite)
+names_ID$Metabolite<-ifelse(names_ID$Metabolite=="2-hydroxy-3-methylpentanoate/hydroxyisocaproate","hydroxyisocaproate",names_ID$Metabolite)
+names_ID$Metabolite<-ifelse(names_ID$Metabolite=="alpha-hydroxybutyrate/beta-hydroxybutyrate/hydroxyisobutyrate","hydroxyisobutyrate",names_ID$Metabolite)
+
+dat_top_hit_validate_VN <- subset(TBM_dat_VN,select=c(Metabolites,"age","HIV","ttdeath_2m","evdeath_2m","cohort"))
+dat_top_hit_validate_IN <- subset(TBM_dat_IN,select=c(Metabolites,"age","HIV","ttdeath_2m","evdeath_2m","cohort"))
+
+names(dat_top_hit_validate_VN) <- plyr::mapvalues(names(dat_top_hit_validate_VN), from = names_ID$Metabol_names, to = names_ID$Metabolite)
+names(dat_top_hit_validate_IN) <- plyr::mapvalues(names(dat_top_hit_validate_IN), from = names_ID$Metabol_names, to = names_ID$Metabolite)
+Metabolites <- plyr::mapvalues(Metabolites, from = names_ID$Metabol_names, to = names_ID$Metabolite)
+
+dat_top_hit_validate_VN_2 <- subset(dat_top_hit_validate_VN,select=c(Metabolites,"age","HIV","ttdeath_2m","evdeath_2m"))
+dat_top_hit_validate_IN_2 <- subset(dat_top_hit_validate_IN,select=c(Metabolites,"age","HIV","ttdeath_2m","evdeath_2m"))
+
+d2<-rbind(dat_top_hit_validate_VN,dat_top_hit_validate_IN)
+d2 %<>% filter(!(evdeath_2m==0&ttdeath_2m<60)) %>% dplyr::select(c(Metabolites,"evdeath_2m","cohort"))
+
+d2_long <- gather(d2, metabolites, concentration, `N-carbamoyl-beta-alanine`:sebacate, factor_key=TRUE)
+Get.breaks <- function(f, cuts, digits = 2)
+{
+  x <- round(quantile(f, probs = seq(1/cuts, 1 - 1/cuts, 1/cuts), names = F,na.rm=T), digits)
+  x <- sort(unique(c(0, x, Inf)))
+  rm(f, cuts, digits)
+  return(x)
+}
+
+d2_long %<>% mutate(
+  metabolites = dplyr::case_when(metabolites == "Unknown compound"~"unidentified compound",
+                          T~metabolites)
+)
+
+```
+
+```{r}
+# GLOBAL PARAMs
+Metabolites <- c(
+  "hydroxyisocaproate",
+  "3-hydroxyoctanoate",
+  "hydroxyisobutyrate",
+  "C4-OH carnitine",
+  "tryptophan",
+  "p-hydroxyphenylacetate",
+  "phenyllactate",
+  "N-carbamoyl-beta-alanine",
+  "N6,N6,N6-trimethyllysine",
+  "sebacate")
+
+#original
+rename_metabolites <- list("hydroxyisocaproate" = "FA 6:0;OH",
+                           "3-hydroxyoctanoate"= "FA 8:0;3OH",
+                           "hydroxyisobutyrate" = "FA 4:0;OH",
+                           "C4-OH carnitine" = "CAR 4:0;OH",
+                           "tryptophan" = "Tryptophan",
+                           "p-hydroxyphenylacetate"="p-Hydroxyphenylacetate",
+                           "phenyllactate" = "Phenyllactate",
+                           "N-carbamoyl-beta-alanine" = "N-carbamoyl-beta-alanine",
+                           "N6,N6,N6-trimethyllysine" = "N6,N6,N6-Trimethyllysine",
+                           "sebacate" = "Sebacate")
+
+dim(d2_long)#11594     4
+cut_all = NULL
+p<-list()
+for(i in 1:length(Metabolites)) {
+  df <-subset(d2_long,metabolites==Metabolites[i])
+  breaks<-Get.breaks(df$concentration, cuts = 15, digits = 4)
+  labels<-c(head(tail(breaks,-1),-1),mean(c(max(df$concentration,na.rm=T),head(tail(breaks,2),1))))
+  concentration_max=max(df$concentration,na.rm=T)
+  concentration_min=min(df$concentration,na.rm=T)
+  cut <- df %>% mutate(metabolites_cut = cut(concentration, right = F,
+                                             breaks = breaks,
+                                             labels = labels),
+                       concentration = as.numeric(as.character(metabolites_cut))) %>% 
+        group_by(concentration,cohort) %>% 
+        dplyr::summarise(.groups = "drop",
+                         p_metabolites_cut = mean(evdeath_2m),
+                         n_metabolites_cut= dplyr::n()) %>%
+        mutate(se=sqrt(p_metabolites_cut*(1-p_metabolites_cut)/n_metabolites_cut)) %>%
+        mutate(plo=p_metabolites_cut-qnorm(.975,0,1)*se, 
+               phi=p_metabolites_cut+qnorm(.975,0,1)*se,
+               concentration2=ifelse(cohort=="Vietnam",concentration+0.05,concentration)) %>% as.data.frame()
+
+  cut$metabolites <- Metabolites[[i]]
+  if(is.null(cut_all)){
+    cut_all = cut
+  }
+  else {
+    cut_all = rbind(cut_all,cut)
+  }
+  
+  p_tmp<-ggplot(data=df, aes(x=concentration,y = evdeath_2m, color=cohort))+
+          geom_smooth(method = glm,
+                      aes(fill = cohort,group=cohort),
+                      method.args = list(family = "binomial"),
+                      se = TRUE,
+                      alpha = 0.1,
+                      size=2,fullrange=TRUE)+
+          geom_point(data=cut,aes(x=concentration ,y=p_metabolites_cut,colour=cohort ),size=2.5,alpha=0.5)+
+          geom_errorbar(data=cut,aes(x=concentration,
+                                     y=p_metabolites_cut,
+                                     ymin=plo,ymax=phi,
+                                     col=cohort),
+                        size=1,alpha=0.5,
+                        )+
+          coord_cartesian(xlim=c(concentration_min, concentration_max),ylim=c(0,1))+
+          scale_x_continuous(breaks=breaks_pretty(n=4))+
+          scale_color_manual(values=c("#313695", "#A50026"))+
+          scale_fill_manual(values = c("#313695", "#A50026"))+
+          labs(x = "",
+               y = "",
+               title = rename_metabolites[[Metabolites[i]]])+
+          guides(fill=guide_legend(title="Cohort"),
+                 color=guide_legend(title="Cohort", override.aes = list(size=14)))+
+          theme_bw()+
+          theme(plot.title = element_text(size = 25,hjust=0.5,face="bold"),
+                axis.title.x = element_blank(),
+                axis.title.y = element_blank(),
+                axis.text.y = if(mod(i,5)==1) element_text( colour="black", size=25) else element_blank(),
+                axis.text.x = element_text(colour="black", size=25),
+                axis.ticks.y = if(mod(i,5)==1) element_line() else element_blank(),
+                legend.title = element_text( colour="black", size=35,face="bold"),
+                legend.text = element_text(size = 25),
+                legend.key = element_rect(colour = NA),
+                strip.text=element_text(face = "bold",size=15),
+                plot.margin = unit(c(0.5,0.5,0.5,0.5), "cm"),
+                panel.grid.minor = element_blank())
+  
+  leg <- ggpubr::get_legend(p_tmp)
+  p_leg <- ggpubr::as_ggplot(leg)
+  p_tmp <- p_tmp + theme(legend.position="none")
+  
+  xdens <- axis_canvas(p_tmp, axis = "x")+geom_density(data=df,aes(x=concentration,fill=cohort),alpha=0.25,size=0.5)+
+           scale_fill_manual( values = c("#313695", "#A50026"))
+  
+  p1 <- insert_xaxis_grob(p_tmp, xdens, grid::unit(.2, "null"), position = "top")
+  p[[i]]<-ggdraw(p1)
+}
+
+length(p)## 10
+
+figure <- ggpubr::ggarrange(p[[1]],p[[2]],
+                            p[[3]],p[[4]],
+                            p[[5]],p[[6]],
+                            p[[7]],p[[8]],
+                            p[[9]],p[[10]],
+                            widths = c(1.17,1,1,1,1),ncol =5,nrow=2) + theme(plot.margin = margin(1,1,1,1, "cm")) 
+figure <- annotate_figure(figure,
+                          left = text_grob("Sixty-day mortality", 
+                                           color = "black", rot = 90, size = 30,face="bold",vjust=0.5),
+                          bottom = text_grob("Intensity of ion peak", 
+                                             color = "black", rot = 0, size = 30,face="bold",vjust = -0.2))
+figure <- ggarrange(figure, p_leg,ncol=2,nrow=1,widths = c(9, 1))
+
+# Export
+tiff(file=paste0(path_output,"/Figure_1A.tiff"),res=1000, units = 'in', width=30, height =13,compression = 'lzw')
+figure
+dev.off()
+
+```
+
+#### Figure 1B:
+
+```{r}
+
+library(grid)
+library(dplyr)
+library(ggdendro)
+library(stats)
+library(ComplexHeatmap)
+library(circlize)
+library(dendextend)
+
+cor.pval.test <- function(x1, x2, ...) {
+  r <- ncol(x1)
+  n <- ncol(x2)
+  p.mat<- matrix(NA, r, n)
+  for (i in 1:r) {
+    for (j in 1:n) {
+      tmp <- cor.test(x1[, i], x2[, j], ...)
+      p.mat[i, j] <- tmp$p.value
+    }
+  }
+  rownames(p.mat) <-  colnames(x1)
+  colnames(p.mat) <- colnames(x2)
+  return(p.mat)
+}
+
+data_pooled <- rbind(TBM_dat_IN,TBM_dat_VN) %>% mutate(TBM_grade_ord=as.numeric(factor(TBM_grade)),
+                                                       TBM_grade_ord=ordered(TBM_grade_ord,levels=1:3))
+
+names(data_pooled) <- plyr::mapvalues(names(data_pooled),
+                                      from = names_ID$Metabol_names,
+                                      to = names_ID$Metabolite)
+
+df<-data_pooled %>% plotly::rename("CSF/blood glucose ratio"="CSF_blood_glucose_ratio","CSF lactate"="lactate",
+                                   "CSF leukocytes counts" ="CSF_leukocytes",
+                                   "CSF mononuclear cell counts" ="CSF_mononuclear_cells",
+                                   "CSF polymorphonuclear cell counts" ="CSF_polymorphonuclear_cells",
+                                   "CSF protein"="CSF_protein")
+
+trp_mets <- c("sebacate",
+              "N6,N6,N6-trimethyllysine",
+              "N-carbamoyl-beta-alanine",
+              "phenyllactate",
+              "p-hydroxyphenylacetate",
+              "tryptophan",
+              "C4-OH carnitine",
+              "hydroxyisobutyrate",
+              "3-hydroxyoctanoate",
+              "hydroxyisocaproate")
+
+cor_method="spearman"
+cor_mat <- cor(df[, trp_mets],use='pairwise.complete.obs', method = cor_method)
+p.cor_mat <- cor.pval.test(df[, trp_mets], df[, trp_mets],method=cor_method, use='pairwise.complete.obs')
+
+dist_matrix <- dist(abs(cor_mat), method="euclidean")
+hc <- hclust(dist_matrix, method="ward.D")
+hcd <- as.dendrogram(hc)
+
+mat_tmp <- cor_mat
+p.mat_tmp <- p.cor_mat
+labels1 <-round(mat_tmp,2)
+vals1 <- labels1
+vals1[p.mat_tmp > 0.05] <- 0
+labels1[p.mat_tmp > 0.05] <- ''
+
+
+col=c("#001164", 'white', "#FF681E")
+col_fun = colorRamp2(c(-1,0,1), col)
+
+tmp0 <- rev(hcd)
+tmp <- rev(hcd)
+order.dendrogram(tmp) <- c( 10,9,8,7,6,5,4,3,2,1)
+tmp0 <- match_order_by_labels(tmp0, tmp)
+
+colnames(vals1) <- rev(unname(unlist((rename_metabolites))))
+rownames(vals1) <- rev(unname(unlist((rename_metabolites))))
+
+#Heatmap
+row_ha = rowAnnotation(month = anno_text(colnames(vals1), just = "center", gp = gpar(fontsize = 14,fontface='bold'),
+        location = unit(0.5, "npc"), show_name = FALSE), annotation_name_rot = 0)
+
+hm = Heatmap(vals1,col = col_fun,
+        cell_fun = function(j, i, x, y, width, height, fill) {
+        grid.text(labels1[i,j], x, y, gp = gpar(fontsize = 10))},
+        rect_gp = gpar(col = "black", lwd = 0.5),
+        row_order = colnames(vals1),
+        cluster_rows = tmp0,
+        cluster_columns = tmp0,
+        row_names_side = "right",
+        row_dend_side = "left",
+        show_heatmap_legend = FALSE,
+        name = "Corr.",
+        show_row_names = TRUE,
+        column_names_rot = 45,
+        column_names_gp = gpar(fontsize = 14,fontface='bold'),
+        row_names_gp = gpar(fontsize = 14,fontface='bold'),
+        row_dend_width = unit(2, "cm"),
+        column_dend_height = unit(2, "cm"),)
+
+lgd = Legend(col_fun = col_fun, title = "Corr.", legend_height = unit(3, "in"), at = c(-1, -0.5,0, 0.5, 1),
+             labels_gp = gpar(col = "black", fontsize = 14), title_gp = gpar(col = "black", fontsize = 14,fontface ='bold'))
+
+p <- draw(hm, heatmap_legend_list = lgd, padding = unit(c(2, 2, 2, 2), "mm"))
+
+
+#Export
+tiff(file=paste0(path_output,"/Figure_1B.tiff"),res=480, units = 'in', width = 7.5, height =6.5,compression = 'lzw')
+draw(hm, heatmap_legend_list = lgd, padding = unit(c(2, 2, 2, 2), "mm"))
+dev.off()
+```
+
+#### Figure 1C:
+
+```{r}
+library(cowplot)
+library(ggpubr)
+library(rstatix)
+library(tidyverse)
+library(cowplot)
+library(DescTools)
+library(ggsci)
+
+
+Metabolites <- Metabol_tophit_names_combined
+names_ID$Metabolite<-ifelse(names_ID$Metabolite=="Unknown_of_interest","Unknown compound",names_ID$Metabolite)
+names_ID$Metabolite<-ifelse(names_ID$Metabolite=="2-hydroxy-3-methylpentanoate/hydroxyisocaproate","hydroxyisocaproate",names_ID$Metabolite)
+names_ID$Metabolite<-ifelse(names_ID$Metabolite=="alpha-hydroxybutyrate/beta-hydroxybutyrate/hydroxyisobutyrate","hydroxyisobutyrate",names_ID$Metabolite)
+
+dat_top_hit_all <- subset(clinmet_full,select=c(Metabolites,"age","HIV","ttdeath_2m","evdeath_2m","diagnosis_ultimate2"))
+
+names(dat_top_hit_all) <- plyr::mapvalues(names(dat_top_hit_all), from = names_ID$Metabol_names, to = names_ID$Metabolite)
+Metabolites <- plyr::mapvalues(Metabolites, from = names_ID$Metabol_names, to = names_ID$Metabolite)
+
+dat_top_hit_all_2 <- subset(dat_top_hit_all,select=c(Metabolites,"ttdeath_2m","evdeath_2m","diagnosis_ultimate2"))
+
+# d2<-dat_top_hit_all_2 %>% mutate(diagnosis_ultimate3=ifelse(diagnosis_ultimate2%in%c("Bacterial meningitis", "Cryptococcal meningitis", ),"Other CNS infection",diagnosis_ultimate2))
+d2<-dat_top_hit_all_2 %>% mutate(diagnosis_ultimate3=diagnosis_ultimate2)# all
+
+d2 %<>% filter(!(evdeath_2m==0&ttdeath_2m<61)) %>% dplyr::select(c(Metabolites,"evdeath_2m","diagnosis_ultimate3"))
+
+d2_long <- gather(d2, metabolites, concentration, `N-carbamoyl-beta-alanine`:sebacate, factor_key=TRUE)
+
+dim(d2_long) #12320     4
+
+d2_long %<>% mutate(etiology=ifelse(diagnosis_ultimate3=="TBM" & evdeath_2m==1,'TBM non survivors',
+                                    ifelse(diagnosis_ultimate3=="TBM" & evdeath_2m==0,
+                                           'TBM survivors', diagnosis_ultimate3)))
+
+my_comparisons <- list( c("Bacterial meningitis","Non-infectious control"),
+                        c("Cryptococcal meningitis","Non-infectious control"),
+                        c("TBM survivors","Non-infectious control"),
+                        c("TBM non survivors","Non-infectious control"))
+
+Metabolites <- c(
+  "hydroxyisocaproate",
+  "3-hydroxyoctanoate",
+  "hydroxyisobutyrate",
+  "C4-OH carnitine",
+  "tryptophan",
+  "p-hydroxyphenylacetate",
+  "phenyllactate",
+  "N-carbamoyl-beta-alanine",
+  "N6,N6,N6-trimethyllysine",
+  "sebacate")
+
+rename_metabolites <- list("hydroxyisocaproate" = "FA 6:0;OH",
+                           "3-hydroxyoctanoate"= "FA 8:0;3OH",
+                           "hydroxyisobutyrate" = "FA 4:0;OH",
+                           "C4-OH carnitine" = "CAR 4:0;OH",
+                           "tryptophan" = "Tryptophan",
+                           "p-hydroxyphenylacetate"="p-Hydroxyphenylacetate",
+                           "phenyllactate" = "Phenyllactate",
+                           "N-carbamoyl-beta-alanine" = "N-carbamoyl-beta-alanine",
+                           "N6,N6,N6-trimethyllysine" = "N6,N6,N6-Trimethyllysine",
+                           "sebacate" = "Sebacate")
+
+p<-list()
+library(ggbeeswarm)
+for(i in 1:length(Metabolites)){
+  print(i)
+  if(mod(i,5)==1){
+    ticksy <- NULL
+    texty <- element_text( colour="black", size=25)
+    }
+  else{
+      ticksy <- element_blank()
+      texty <- element_blank()
+  }
+
+  df <-subset(d2_long,metabolites==Metabolites[i])
+  df$etiology <- factor(df$etiology,     # Reorder factor levels
+                        c("Non-infectious control", "Bacterial meningitis", "Cryptococcal meningitis", "TBM survivors","TBM non survivors"))
+  
+  stat.test <- df %>%
+  group_by('etiology') %>% 
+  wilcox_test(concentration~etiology, p.adjust.method = 'none') %>%
+  filter(group1=="Non-infectious control") %>%
+  add_xy_position(x = 'etiology')
+  
+ p1<-ggplot(data=df,aes(y=concentration, x=etiology,fill=etiology,color=etiology)) +
+   geom_quasirandom(alpha = 0.8,shape=21,size=4)+
+   geom_boxplot(width=0.3, fill="white",col='black',alpha=0.65) +
+   
+   stat_pvalue_manual(inherit.aes = FALSE, stat.test, hide.ns = TRUE,step.increase=0.1,label.size=7)+
+   scale_y_continuous(breaks=breaks_pretty(n=4))+
+   
+   scale_color_manual(values=c("#bebada", "#ebbb8b","#A3BE8C","#81A1C1","#926189")) + ##88C0D0
+   scale_fill_manual(values=c("#bebada", "#ebbb8b","#A3BE8C","#81A1C1","#926189")) +
+     
+   labs(y = "",x = "",title = rename_metabolites[[Metabolites[i]]])+
+   guides(fill = guide_legend(title="Patient category"),
+          color = guide_legend(title="Patient category", override.aes = list(size=14)))+
+   theme_bw()+
+   theme(plot.title = element_text(size = 25,hjust=0.5,face="bold"),
+         axis.title.x = element_text(face="bold", colour="black", size=25),
+         axis.title.y = element_text(face="bold", colour="black", size=25),
+         axis.text.y = element_text( colour="black", size=25),
+         axis.text.x = element_blank(),
+         axis.ticks.x=element_blank(),
+         legend.text = element_text(size = 25),
+         legend.title = element_text( colour="black", size=35,face='bold'),
+         legend.key = element_rect(colour = NA),
+         legend.key.size = unit(1.5, 'cm'),
+         panel.grid.minor = element_blank(),)
+ leg <- ggpubr::get_legend(p1)
+ p_leg <- ggpubr::as_ggplot(leg)
+ p1 <- p1 + theme(legend.position="none")
+ p[[i]]<-ggdraw(p1)
+}
+
+figure = ggpubr::ggarrange(p[[1]],p[[2]],
+                           p[[3]],p[[4]],
+                           p[[5]],p[[6]],
+                           p[[7]],p[[8]],
+                           p[[9]],p[[10]],
+                           ncol = 5,nrow = 2)
+
+figure <- annotate_figure(figure,left = text_grob("Metabolite concentration\n(log 2 of ion peak intensity)", color = "black", rot = 90, size = 35,face="bold",vjust=0.5)) #"Intensity of ion peak"
+
+
+figure <- ggpubr::ggarrange(figure,NULL,p_leg,nrow=1,widths=c(5,0.05,1))
+
+#export
+tiff(file=paste0(path_output,"/Figure_1C.tiff"),res=480, units = 'in', width=32, height =10,compression = 'lzw')
+figure
+dev.off()
+
+```
+
+### Figure 2:
+
+#### Figure 2A:
+
+```{r}
+
+#both In & VN
+load(file="Derive_Results/variable_selection_in_both_IN_VN.Rdata")
+dat_plot<-data.frame(variable=names(stab.boot$max),`Selected probability`=stab.boot$max)[-1,]
+dat_plot$variable <- plyr::mapvalues(dat_plot$variable, from = c(names_ID$Metabol_names,"HIV_bi"), to = c(names_ID$Metabolite,"HIV"))
+
+dat_plot <- dat_plot[!dat_plot$variable == "Unknown compound", ]
+
+dat_plot$variable <- plyr::mapvalues(dat_plot$variable, from = c(names(rename_metabolites),'Ct','age'), to = c(unlist(unname(rename_metabolites)),'Bacterial load','Age'))
+
+dat_plot %>%
+  mutate(name = reorder(variable, Selected.probability)) %>%
+  ggplot(aes(y=name,x=Selected.probability))+geom_point(col="#2c7fb8",size=4,shape=15)+
+  geom_vline(xintercept=stab.boot$cutoff,col="red")+
+  geom_line(linetype = "dashed")+
+  xlab("Selected probability")+theme_bw()+theme(legend.position="bottom")+ theme(panel.grid.minor = element_blank(),axis.title.x = element_text(face="bold", colour="black", size=20),
+        axis.title.y = element_blank(),
+        axis.text.y = element_text(face = "bold", colour="black", size=18),
+        axis.text.x = element_text( colour="black", size=15),
+        axis.ticks.x=element_blank(),
+        legend.text = element_text(size = 15),
+        legend.title = element_text( colour="black", size=15),
+        legend.key = element_rect(colour = NA),
+        strip.text=element_text(face = "bold",size=15),
+        plot.title = element_text(size = 20, face = "bold",hjust = 0.5))->p1
+
+tiff(file=paste0(path_output,"/Figure_2A.tiff"),res=480, units = 'in', width =9*1.1, height = 6*1.1,compression = 'lzw')
+p1
+dev.off()
+#########################################################################################################################
+# load(file="Derive_Results/variable_selection_in_VN.Rdata")
+# dat_plot<-data.frame(variable=names(stab.boot$max),`Selected probability`=stab.boot$max)[-1,]
+# dat_plot$variable <- plyr::mapvalues(dat_plot$variable, from = c(names_ID$Metabol_names,"HIV_bi"), to = c(names_ID$Metabolite,"HIV"))
+# 
+# dat_plot <- dat_plot[!dat_plot$variable == "Unknown compound", ]
+# 
+# dat_plot$variable <- plyr::mapvalues(dat_plot$variable, from = c(names(rename_metabolites),'Ct','age'), to = c(unlist(unname(rename_metabolites)),'Bacterial load','Age'))
+# 
+# dat_plot %>%
+#   mutate(name = reorder(variable, Selected.probability)) %>%
+#   ggplot(aes(y=name,x=Selected.probability))+geom_point(col="#2c7fb8",size=4,shape=15)+
+#   geom_vline(xintercept=stab.boot$cutoff,col="red")+
+#   geom_line(linetype = "dashed")+
+#   xlab("Selected probability")+theme_bw()+theme(legend.position="bottom") + 
+#   theme(panel.grid.minor = element_blank(),
+#         axis.title.x = element_text(face="bold", colour="black",size=20),
+#         axis.title.y = element_blank(),
+#         axis.text.y = element_text(face = "bold", colour="black", size=18),
+#         axis.text.x = element_text( colour="black", size=15),
+#         axis.ticks.x=element_blank(),
+#         legend.text = element_text(size = 15),
+#         legend.title = element_text( colour="black", size=15),
+#         legend.key = element_rect(colour = NA),
+#         strip.text=element_text(face = "bold",size=15),
+#         plot.title = element_text(size = 20, face = "bold",hjust = 0.5))->p2
+```
+
+#### Figure 2B:
+
+```{r}
+
+library(Matrix)
+library(tidyverse)
+library(magrittr)
+library(dplyr)
+library(patchwork)
+library(ggplot2)
+library(plyr)
+library(lattice)
+library(MASS)
+library(viridis)
+library(colorspace)
+library(wesanderson)
+library(ggsci)
+library(scales)
+library(NatParksPalettes)
+library(MASS)
+library(metR)
+library(geomtextpath)
+library(raster)
+library(sp)
+library(ggalt)
+library(sf)
+library(smoothr)
+library(ggforce)
+library(DescTools)
+library(ggfx)
+library(scattermore)
+library(ggnewscale)
+
+l <-load(paste0(path_code,"/clinment.Rdata"))
+clinmet %<>% rename_all(~ gsub("_", "-", .))
+data <- clinmet[names(clinmet)[1:470]] #metabolites
+print(data[!complete.cases(data), ]) #5 rows missing value
+missing_id <-data[!complete.cases(data), ]$PatientID
+clinmet <- clinmet[!(clinmet$PatientID %in% missing_id), , drop = FALSE]
+
+data <- clinmet[names(clinmet)[1:470]]
+rownames(data) <- data$PatientID
+data$PatientID <- NULL
+
+feats <- c('QI04209_HILIC_pos', 'TF5_HILIC_neg', 'QI05742_C18_neg', 'QI06445_C18_neg', 'TF19_HILIC_pos', 'QI32_HILIC_neg', 
+         'TF21_HILIC_pos', 'QI09136_HILIC_pos', 'QI05254_C18_neg')
+
+feats <- lapply(X = feats, FUN = function(t) gsub(pattern = "_", replacement =  "-", x = t, fixed = TRUE))
+
+clinmet <- clinmet %>% filter(!((clinmet['ttdeath-2m']<61) & (clinmet['evdeath-2m']==0)))
+
+print("Data cleaning complete")
+print(dim(data)) #1062  469
+
+GCS_level <-cut(clinmet$GCS,
+    breaks = c(4,11,15,16),
+    include.lowest = TRUE,
+    right = F)
+
+clinmet$GCS_level <- mapvalues(GCS_level, from=c("[4,11)","[11,15)","[15,16]"), to=c("4-10","11-14","15"))
+
+df <- clinmet[c("QI06445-C18-neg","TF19-HILIC-pos","evdeath-2m","GCS_level","GCS")] %>% 
+      mutate(GCS = as.factor(GCS),`evdeath-2m` = as.factor(mapvalues(`evdeath-2m`, from=c("0","1"), to=c("alive","dead"))))
+names(df) <- lapply(X = names(df), FUN = function(t) gsub(pattern = "-", replacement =  "_", x = t, fixed = TRUE))
+```
+
+```{r}
+sf::sf_extSoftVersion()["GEOS"] #"3.11.2"
+geos::geos_version() #> '3.11.1'
+
+elp <- ggplot(data =df,aes(TF19_HILIC_pos,QI06445_C18_neg))+
+              stat_density_2d(n=500,breaks=c(0.00043),geom='polygon')+
+              xlim(c(2,15))+
+              ylim(c(10,22))
+elp <- ggplot_build(elp)$data[[1]]
+hull <- elp %>% st_as_sf(coords=c("x", "y")) %>% st_union() %>% st_concave_hull(ratio = .01)
+p <- as(hull, 'Spatial')
+r <- rasterFromXYZ(x_tilde[,c('TF19_HILIC_pos','QI06445_C18_neg','mortality')])
+rp <- raster::mask(r,p)
+x_tilde2 <- as.data.frame(rp, xy = TRUE)
+
+p <-ggplot() + 
+    geom_raster(data = x_tilde2, mapping = aes(x=x,y = y, fill=mortality),interpolate = TRUE) +
+    scale_fill_distiller(name = "Predicted mortality",palette = "RdYlBu",na.value="white") +
+    geom_point(data=df%>%filter(evdeath_2m=='alive'), 
+               aes(x=TF19_HILIC_pos,y= QI06445_C18_neg,color=factor(evdeath_2m)),
+               size=5,alpha=0.4,show.legend = T) +
+    geom_point(data=df%>%filter(evdeath_2m=='dead'), aes(x=TF19_HILIC_pos,
+                                                         y= QI06445_C18_neg,
+                                                         color=factor(evdeath_2m)),
+               size=5, alpha=0.3, show.legend = T) +
+    scale_color_manual(name = "Patient outcome",
+                      values = c(alive = "#f79aaf", dead = "black"),
+                      labels = c("alive", "dead"),
+                      guide = guide_legend(override.aes = list(linetype = c( alive = "blank",dead = "blank"),
+                                                               shape = c(alive = 16, dead = 16)))) +
+    new_scale_color() + 
+    geom_contour(data = x_tilde,aes(color='line1',x=TF19_HILIC_pos,y= QI06445_C18_neg,z=GCS),
+                 bins=15,show.legend=T,breaks=c(11,12,13,14,15)) + 
+    geom_text_contour(data= x_tilde,
+                    aes(x=TF19_HILIC_pos,y= QI06445_C18_neg,z=GCS),
+                    skip=0, breaks=c(11,12,13,14,15), stroke = 0.1, stroke.colour = "white",
+                    label.placer = label_placer_fraction(frac = 0.5,rot_adjuster = isoband::angle_halfcircle_bottom()),
+                    colour = "#006D5B",
+                    fontface = "bold",
+                    size=7,show.legend = F,) + 
+    scale_colour_manual(name = "Severity",
+                      values = c("line1" = "#006D5B"),
+                      labels = c("GCS"),
+                      guide = guide_legend(override.aes = list(linetype = c("line1" = "solid"),shape = c("line1" = NA)))) +
+    labs(x="Tryptophan", y="FA 8:0;3OH", color='Severity',size="Predicted mortality", shape='Patient outcome') + 
+    guides(color = guide_legend(order=1,override.aes = list(shape = NA,size=7)),
+           size = guide_legend(order=2,override.aes = list(size=7)),
+           shape = guide_legend(order=3,override.aes = list(size=7)))+
+    theme_classic() +
+    theme(panel.grid.minor = element_blank(),
+          axis.title.x = element_text(face="bold", colour="black", size=25),
+          axis.title.y = element_text(face="bold", colour="black", size=25),
+          axis.text.y = element_text( colour="black", size=20),
+          axis.text.x = element_text( colour="black", size=20),
+          axis.ticks.x=element_blank(),
+          legend.text = element_text(size = 20),
+          legend.title = element_text( colour="black", size=25,face='bold'),
+          legend.key = element_rect(colour = NA),
+          strip.text=element_text(face = "bold",size=15))
+
+p <- ggplot_build(p)
+p <- ggplot_gtable(p)
+
+tiff(file=paste0(paste0(path_output,"/Figure_2B.tiff")),res=480, units = 'in', width = 12, height = 8,compression = 'lzw')
+grid::grid.draw(p)
+dev.off()
+
+```
+
+#### Figure 2D:
+
+```{r}
+library(grid)
+
+load(file="Derive_Results/mediation_metabolites.Rdata")
+p_mediation<-data.table::rbindlist(p)
+
+mediated_metabolites <- p_mediation %>% filter(Effect=="Rtnie") %>% dplyr::select(metabolite) %>% c()
+
+order_vector <- rev(Metabolites)
+
+p_mediated_long<-p_mediation %>% mutate(Effect=case_when(Effect=="Rtnde"~"Direct impact",
+                                                         Effect=="Rtnie"~"Indirect impact",
+                                                         Effect=="Rte"~"Total impact",
+                                                         .default ="Proportion Mediated")) %>%
+                                 mutate(Effect=factor(Effect,levels=c("Direct impact","Indirect impact",
+                                                                      "Total impact","Proportion Mediated"))) 
+  
+dim(p_mediated_long)# 48  7
+p_mediated_long_rm<-p_mediated_long %>% filter(metabolite != "Unknown coumpound") %>% 
+                                        filter(metabolite != "3-hydroxyhexanoate")
+
+p_mediated_long_rm %>% filter((Effect!="Proportion Mediated")&(metabolite%in%order_vector)) %>%
+                       mutate(metabolite=factor(metabolite, levels = order_vector, ordered = TRUE)) %>% 
+                       
+  ggplot(aes(x=metabolite, y=Estimate,group=Effect)) +
+  geom_point(color="#313695",size=2) + 
+  facet_grid(~Effect,scales = "free_x")+
+  coord_trans(y = "log2")+
+  geom_errorbar(aes(ymin = `95% CIL`, ymax = `95% CIU`),width=.2,size=1,alpha=0.5,color="#313695")+
+  coord_flip() +
+  scale_x_discrete("",labels = rename_metabolites)+
+  xlab("Metabolites") +
+  ylab("Hazard ratio")+
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5,face="bold", colour="black", size=20),
+    legend.position="bottom",
+    panel.grid.minor = element_blank(),
+    axis.title.x = element_text(face="bold", colour="black", size=25),
+        panel.spacing = unit(1, "lines"),
+        axis.title.y = element_text(face="bold", colour="black", size=25),
+        axis.text.y = element_text(face="bold", colour="black", size=18),
+        axis.text.x = element_text(face="bold", colour="black", size=18),
+        axis.ticks.x=element_blank(),
+        legend.text = element_text(size = 15),
+        legend.title = element_text( colour="black", size=16),
+        legend.key = element_rect(colour = NA),
+        strip.text=element_text(face = "bold",size=20)) -> p1
+
+dim(p_mediated_long_rm)# 40  7
+p_mediated_long_rm%>% filter((Effect=="Proportion Mediated")&(metabolite%in%mediated_metabolites$metabolite)) %>% 
+  mutate(metabolite=factor(metabolite, levels = order_vector, ordered = TRUE)) %>% 
+  ggplot(aes(x=metabolite, y=Estimate)) +
+  geom_point(color="#A50026",size=2) +facet_grid(~Effect, scales="free_x")+
+  geom_errorbar(aes(ymin = `95% CIL`, ymax = `95% CIU`),width=.2,size=1,alpha=0.5,color="#A50026")+
+  coord_flip() +
+  xlab("") +
+  ylab("Proportion")+
+  theme_bw()+
+  ylim(c(-0.05,1))+
+  theme(plot.title = element_text(hjust = 0.5,face="bold", colour="black", size=20),
+        panel.grid.minor = element_blank(),axis.title.x = element_text(face="bold", colour="black", size=25),
+        axis.title.y = element_text(face="bold",colour="black", size=25),
+        axis.text.y = element_blank(),
+        axis.text.x = element_text(face="bold",colour="black", size=18),
+        axis.ticks.x=element_blank(),
+        axis.ticks.y=element_blank(),
+        legend.position="none",
+        legend.text = element_text(size = 20),
+        legend.title = element_text( colour="black", size=35),
+        legend.key = element_rect(colour = NA),
+        strip.text=element_text(face = "bold",size=20))->p2
+
+#Export
+tiff(file=paste0(path_output,"/Figure_2D.tiff"),res=480, units = 'in', width = 18, height =6,compression = 'lzw')
+grid.newpage()
+grid.draw(cbind(ggplotGrob(p1),
+                 ggplotGrob(p2),
+                 size = "last"))
+dev.off()
+```
+
+### Figure 4:
+
+```{r}
+library(grid)
+
+data_pooled <- rbind(TBM_dat_IN,TBM_dat_VN) %>% mutate(TBM_grade_ord=as.numeric(factor(TBM_grade)),
+                                                       TBM_grade_ord=ordered(TBM_grade_ord,levels=1:3))
+names(data_pooled) <- plyr::mapvalues(names(data_pooled),
+                                      from = names_ID$Metabol_names,
+                                      to = names_ID$Metabolite)
+dim(dat_IN) #388  28
+dim(dat_VN) #679  63
+
+characteristics_numeric1 <- c('age','GCS',
+                             'CSF mononuclear cell counts',
+                             'CSF polymorphonuclear cell counts',
+                             'CSF protein',
+                             "CSF/blood glucose ratio",'Ct')
+
+characteristics_numeric2 <-  c("log2.TNFa","log2.IFNg","log2.IL2","log2.IL4","log2.IL5","log2.IL6","log2.IL10","log2.IL13")
+
+trp_mets <- c("sebacate",
+              "N6,N6,N6-trimethyllysine",
+              "N-carbamoyl-beta-alanine",
+              "phenyllactate",
+              "p-hydroxyphenylacetate",
+              "tryptophan",
+              "C4-OH carnitine",
+              "hydroxyisobutyrate",
+              "3-hydroxyoctanoate",
+              "hydroxyisocaproate")
+
+col=c("#001164", 'white', "#FF681E")
+
+# Pooled cohort
+df1<-data_pooled %>% plotly::rename("CSF/blood glucose ratio"="CSF_blood_glucose_ratio","CSF lactate"="lactate",
+                                   "CSF leukocytes counts" ="CSF_leukocytes",
+                                   "CSF mononuclear cell counts" ="CSF_mononuclear_cells",
+                                   "CSF polymorphonuclear cell counts" ="CSF_polymorphonuclear_cells",
+                                   "CSF protein"="CSF_protein")
+
+mat1 <- cor(df1[, trp_mets],df1[, characteristics_numeric1],
+            use='pairwise.complete.obs', method = cor_method)
+
+p.mat1 <- cor.pval.test(df1[, trp_mets],df1[, characteristics_numeric1],
+                        method=cor_method, use='pairwise.complete.obs')
+
+colnames(mat1) <- plyr::mapvalues(colnames(mat1),from = c('age','Ct'), to = c('Age','GeneXpert Ct-value'))
+colnames(p.mat1) <- plyr::mapvalues(colnames(p.mat1),from = c('age', 'Ct'), to = c('Age', 'GeneXpert Ct-value'))
+
+rownames(mat1) <- rev(unname(unlist((rename_metabolites))))[1:10]
+rownames(p.mat1) <- rev(unname(unlist((rename_metabolites))))[1:10]
+
+p1  <- ggcorrplot(t(mat1),
+             p.mat = t(p.mat1), 
+             colors = col,lab = T, lab_size = 4,insig="blank",
+             outline.color = 'black')+ theme(legend.position="none")+
+    labs(fill="Corr")+
+    theme(axis.text.x = element_text(face="bold", colour="black", size=16),
+          axis.text.y = element_text(face="bold", colour="black", size=16),
+          legend.text = element_text(size = 15),
+        legend.title = element_text( colour="black", size=12)) + 
+    theme(plot.title = element_text(hjust = 0.5,face="bold", colour="black", size=20))+
+  labs(title = element_text(hjust = 100,vjust=50, "Combined cohort",colour="black", size=12,face='bold'))
+
+## Indonesia cohort
+df2<-dat_IN
+mat2 <- cor(df2[, characteristics_numeric2],df2[, trp_mets],
+            use='pairwise.complete.obs', method = cor_method)
+
+p.mat2 <- cor.pval.test(df2[, characteristics_numeric2],df2[, trp_mets ],
+                          method=cor_method, use='pairwise.complete.obs')
+
+renamed_chars <- gsub("log2.", "", characteristics_numeric2)
+
+rownames(mat2) <- plyr::mapvalues(rownames(mat2),
+                                  from = characteristics_numeric2, to = renamed_chars)
+rownames(p.mat2) <- plyr::mapvalues(rownames(p.mat2),
+                                    from = characteristics_numeric2, to = renamed_chars)
+
+p2 <-ggcorrplot(mat2,p.mat = p.mat2, insig = 'blank',colors = col,
+                outline.color = 'black',legend.title = "Corr.",
+                lab = T, lab_size = 4)+ylab("")+xlab("")+
+  theme(legend.position = 'none')+
+  theme(panel.grid.minor = element_blank(),
+        legend.key.width = unit(0.5, "cm"),
+        legend.key.height = unit(2, "cm"),
+        axis.title.x = element_text(face="bold", colour="black", size=12),
+        axis.title.y = element_text(face="bold", colour="black", size=12),
+        axis.text.y = element_blank(),
+        axis.text.x = element_text(face="bold", colour="black", size=16),
+        axis.ticks.x= element_blank(),
+        axis.ticks.y= element_blank(),
+        legend.text = element_text(size = 15),
+        legend.title = element_text( colour="black", size=12),
+        legend.key = element_rect(colour = NA),
+        strip.text=element_text(face = "bold",size=12),
+        plot.margin=unit(c(-0.2,-0.1,-0.6,-0.1), "cm")) +
+  theme(plot.title = element_text(hjust = 0.5,face="bold", colour="black", size=20)) + 
+  labs(title = element_text(hjust = 100,vjust=50, "Indonesia",colour="black", size=12,face='bold'))
+
+#### Vietnam cohort
+df3<-dat_VN
+mat3 <- cor( df3[, characteristics_numeric2],df3[, trp_mets],
+            use='pairwise.complete.obs', method = cor_method)
+
+p.mat3 <- cor.pval.test(df3[, characteristics_numeric2],df3[, trp_mets],
+                        use='pairwise.complete.obs',method=cor_method)
+
+colnames(mat3) <- rev(unname(unlist((rename_metabolites))))
+colnames(p.mat3) <- rev(unname(unlist((rename_metabolites))))
+
+rownames(mat3) <- plyr::mapvalues(rownames(mat3),
+                                  from = characteristics_numeric2, to = renamed_chars)
+rownames(p.mat3) <- plyr::mapvalues(rownames(p.mat3),
+                                    from = characteristics_numeric2, to = renamed_chars)
+
+p3 <- ggcorrplot(mat3,
+             p.mat = p.mat3, insig = 'blank',
+             colors = col,
+             outline.color = 'black',
+             lab = T, lab_size = 4)+ylab("")+xlab("") +
+  theme(legend.position = 'right')+
+  theme(panel.grid.minor = element_blank(),
+        legend.key.width = unit(0.5, "cm"),
+        legend.key.height = unit(1, "cm"),
+        axis.title.x = element_text(face="bold", colour="black", size=12),
+        axis.title.y = element_text(face="bold", colour="black", size=12),
+        axis.text.y = element_blank(),
+        axis.text.x = element_text(face="bold", colour="black", size=16),
+        axis.ticks.x=element_blank(),
+        axis.ticks.y=element_blank(),
+        legend.text = element_text(size = 15),
+        legend.title = element_text( colour="black", size=12,face='bold'),
+        legend.key = element_rect(colour = NA))+
+  theme(plot.title = element_text(hjust = 0.5,face="bold", colour="black", size=20))+
+  labs(title = element_text(hjust = 100,vjust=50, "Vietnam",colour="black", size=12,face='bold'))
+
+# Merge and export
+tiff(file=paste0(path_output,"/Figure_4.tiff"),res=900, units = 'in', width = 13*1.1, height =10*1.1,compression = 'lzw')
+grid.newpage()
+grid.draw(cbind(ggplotGrob(p1),
+                ggplotGrob(p2),
+                ggplotGrob(p3),
+                size = "last"))
+dev.off()
+
+```
+
+## Supplemetary Figures
+
+### Figure S1A:
+
+```{r}
+library(pheatmap)
+library(ggplotify)
+library(grid)
+
+clinmet <- clinmet_full
+
+hmdb_annotation <- read.csv(paste0(path_input, '/hmdb_all_metabolites.csv'))
+hmdb_annotation %>% 
+  dplyr::select(accession, name, kegg, kingdom, direct_parent, super_class, class,
+         sub_class) %>% 
+  as.data.frame() -> hmdb_annotation
+
+# List of duplicated metabolites (measured by more than one LC-MS platform)
+dup_mets <- read_excel(paste0(path_input, '/0_Duplicate_metabolites_missing_count_selection_from_Julian_GC.xlsx'))
+dup_mets_id <- dup_mets$row.names[dup_mets$selected == 0]
+
+# List patient outliers
+# outliers <- c('900526','900520')
+
+#Remove duplicates and outliers
+untargeted %>%
+  filter(!(CompoundID %in% dup_mets_id)) %>%
+  as.data.frame() -> untargeted_no_overlap
+
+#Merge with annotation
+untargeted_annotated <- merge(untargeted_no_overlap, hmdb_annotation, 
+                              by.x = 'HMDB_ID', by.y = 'accession',
+                              all.x = T)
+
+met_annotation <- untargeted_annotated %>%
+  dplyr::select(CompoundID, super_class) %>%
+  tibble::column_to_rownames('CompoundID') %>%
+  as.data.frame()
+rownames(met_annotation)<-gsub("-", "_", rownames(met_annotation), fixed = TRUE)
+met_annotation$super_class[is.na(met_annotation$super_class)] <- 'Others'
+
+paletteLength <- 50
+#myColor <- colorRampPalette(c("#313695", 'white', "#A50026"))(paletteLength)
+myColor <- colorRampPalette(c("#001164", "white", "#FF681E"),interpolate="linear", space ="Lab" )(1000)
+
+anno_col <-list (super_class = c("Organic acids and derivatives" = 'forestgreen',"Nucleosides, nucleotides, and analogues"= 'red2',
+                                 "Benzenoids"='orange', 
+                                 "Organoheterocyclic compounds"= 'magenta',
+                                 "Lipids and lipid-like molecules"='blue', "Organic oxygen compounds"='tan4',
+                                 "Organic nitrogen compounds"= 'yellowgreen', "Alkaloids and derivatives"= 'darkgrey',
+                                 "Phenylpropanoids and polyketides"= 'mediumvioletred',"Others"='#ECEFF4'))
+
+
+
+met_annotation2 <- met_annotation
+anno_col2 <- anno_col
+colnames(met_annotation2) <- "Metabolite classification                                  Frequency"
+names(anno_col2) <- "Metabolite classification                                  Frequency"
+
+
+frequency_list <- table(met_annotation2[,1])
+frequency_list <- frequency_list[rev(order(frequency_list))]
+anno_col2$`Metabolite classification                                  Frequency` <- anno_col2$`Metabolite classification                                  Frequency`[names(frequency_list)]
+
+# Indonesia
+tbm_IN <- clinmet %>%
+  filter (diagnosis_ultimate2 == 'TBM' & cohort == 'Indonesia') %>%
+  as.data.frame()
+
+spearman_tbm_IN <- cor(tbm_IN[, met_names], method = 'spearman',
+                              use = 'pairwise.complete.obs')
+
+
+d_mat<-diag(-1,nrow=(length(met_names)+1))
+d_mat[(1:length(met_names)),(1:length(met_names))]<-spearman_tbm_IN
+colnames(d_mat)<-c(colnames(spearman_tbm_IN),"fake")
+rownames(d_mat)<-c(rownames(spearman_tbm_IN),"fake")
+
+
+
+p1<- pheatmap(d_mat,  color = myColor, annotation_row = met_annotation2, annotation_colors = anno_col2, main = "Indonesia",show_rownames=F,show_colnames=F,annotation_names_row=F,legend = F,annotation_legend = F)
+
+# Vietnam
+tbm_VN <- clinmet %>%
+  filter (diagnosis_ultimate2 == 'TBM' & cohort == 'Vietnam') %>%
+  as.data.frame()
+
+spearman_tbm_VN <- cor(tbm_VN[, met_names], method = 'spearman',
+                              use = 'pairwise.complete.obs')
+
+d_mat<-diag(-1,nrow=(length(met_names)+1))
+d_mat[(1:length(met_names)),(1:length(met_names))]<-spearman_tbm_VN
+colnames(d_mat)<-c(colnames(spearman_tbm_VN),"fake")
+rownames(d_mat)<-c(rownames(spearman_tbm_VN),"fake")
+
+p2<- pheatmap(d_mat,  color = myColor, annotation_row = met_annotation2, annotation_colors = anno_col2, main = "Vietnam",show_rownames=F,show_colnames=F,annotation_names_row=F,legend = T,annotation_legend = T)
+
+
+tiff(file=paste0(path_output,"/Figure_S1A.tiff"),res=480, units = 'in', width = 15, height = 5,compression = 'lzw')
+grid.arrange(p1[[4]],p2[[4]], ncol = 2,widths=c(0.8,1.5))
+l = names(anno_col2$`Metabolite classification                                  Frequency`)
+grid.text(rev(unname(unlist(frequency_list[l]))),just = "left",
+          x = 0.9073,
+          y = seq(0, 0.37, (0.37-0)/9)+0.385,gp=gpar(fontsize=10))
+
+grid.lines(x = unit(c(0.706, 0.955), "npc"),
+          y = unit(c(0.36, 0.36), "npc"),
+          default.units = "npc",
+          arrow = NULL, name = NULL,
+          gp=gpar(lwd=1.2), draw = TRUE, vp = NULL)
+grid.lines(x = unit(c(0.706, 0.955), "npc"),
+          y = unit(c(0.82, 0.82), "npc"),
+          default.units = "npc",
+          arrow = NULL, name = NULL,
+          gp=gpar(lwd=1.2), draw = TRUE, vp = NULL)
+grid.lines(x = unit(c(0.706, 0.955), "npc"),
+          y = unit(c(0.78, 0.78), "npc"),
+          default.units = "npc",
+          arrow = NULL, name = NULL,
+          gp=gpar(lwd=1.2), draw = TRUE, vp = NULL)
+dev.off()
+```
+
+### Figure S1B:
+
+```{r}
+table(clinmet_full$diagnosis_ultimate)
+```
+
+
+```{r}
+library(ggrepel)
+
+# Step 1
+table(clinmet_full$diagnosis_ultimate, useNA = "always")
+clinmet_full_data_S8B<-clinmet_full %>% 
+  dplyr::filter(diagnosis_ultimate %in% c('Definite TBM','Probable TBM','Non-infectious control'))%>%
+  dplyr::select(c(2:470,478))%>%
+  dplyr::mutate(group = ifelse(diagnosis_ultimate %in% c("Definite TBM","Probable TBM") ,"TBM" ,"Control")) #change control to Non-infectious control later !
+table(clinmet_full_data_S8B$group)# 54    1067
+
+# step 2: summary
+clinmet_full_data_S8B %>%
+  tidyr::gather(key = "Metabolites", 
+                value = "log2(abundance)", 
+                QI09494_C18_neg:TF59_HILIC_neg) %>%
+  as.data.frame() -> TBM_mets_long
+
+TBM_mets_long_summary<- TBM_mets_long %>% group_by(Metabolites,group) %>% dplyr::summarise(median_mets=median(`log2(abundance)`,na.rm=T)) %>% ungroup() %>% as.data.frame()
+dim(TBM_mets_long_summary)#938   3
+table(TBM_mets_long_summary$group)
+
+# step 3: subgroup for each cohort
+TBM_mets_long_summary %>%
+  dplyr::filter(group == "TBM") %>%
+  as.data.frame() -> TBM_mets_long_summary_TBM
+
+TBM_mets_long_summary%>%
+  dplyr::filter(group == "Control") %>%
+  as.data.frame() -> TBM_mets_long_summary_Control
+
+TBM_mets_wide_summary <- cbind(TBM_mets_long_summary_TBM[,c(1,3)],TBM_mets_long_summary_Control[,3])
+names(TBM_mets_wide_summary) <- c("Metabolite", "TBM","Control")
+
+TBM_mets_wide_summary$Differences <- TBM_mets_wide_summary$TBM - TBM_mets_wide_summary$Control
+
+
+# Step 4: Wilcoxon test to see significantly different metabolites between cohorts (using Wilcoxon because metabolite abundance is not normally distributed)
+TBM_mets_pvalue<- lapply(split(TBM_mets_long, TBM_mets_long$Metabolites),function(x) wilcox.test(`log2(abundance)` ~ group, data = x)$p.value)
+
+table((names(TBM_mets_pvalue) == TBM_mets_wide_summary$Metabolite))# 333 TRUE
+table((names(TBM_mets_pvalue) %in% TBM_mets_wide_summary$Metabolite))# 469 TRUE
+
+TBM_mets_wide_summary$pvalue<-TBM_mets_pvalue[TBM_mets_wide_summary$Metabolite]
+
+# Step 5: test TF02_C8_pos
+TBM_mets_wide_summary %>% dplyr::filter(Metabolite == "TF02_C8_pos")
+test<-TBM_mets_long %>% dplyr::filter(Metabolites == "TF02_C8_pos")  
+
+ggplot(test,aes(x= test$group, y = test$"log2(abundance)"))+
+  geom_boxplot()+
+  stat_compare_means()
+
+# Step 6: FDR
+TBM_mets_wide_summary$pvalue <- as.numeric(TBM_mets_wide_summary$pvalue)
+TBM_mets_wide_summary$FDR <- p.adjust(TBM_mets_wide_summary$pvalue, method = 'BH')
+
+#Filtering out the most extreme metabolites with a FDR < 1^-10
+extreme_pvalues <- TBM_mets_wide_summary %>% dplyr::filter(FDR < 1e-10) %>%as.data.frame()
+list_met_extreme_pvalues <- extreme_pvalues$Metabolite
+
+wilcoxon_extreme_met <- TBM_mets_long %>% dplyr::filter(Metabolites %in% list_met_extreme_pvalues) %>%as.data.frame()
+dim(wilcoxon_extreme_met)# 344147      4
+
+# step 7: visualization
+TBM_mets_wide_summary$Abundance <- 0
+TBM_mets_wide_summary$Abundance[TBM_mets_wide_summary$pvalue <0.05]<- TBM_mets_wide_summary$Differences[TBM_mets_wide_summary$pvalue <0.05]
+TBM_mets_wide_summary %<>% arrange(desc(pvalue)) 
+
+color_limit <- max(-min(TBM_mets_wide_summary[, "Abundance"], na.rm = TRUE), max(TBM_mets_wide_summary[, "Abundance"], na.rm = TRUE), na.rm=TRUE)*1.01
+
+colour_scheme_outcome_L <- c("blue", "cornflowerblue")
+colour_scheme_outcome_R <- c("tomato", "red")
+
+Metabolites <- c(
+  "hydroxyisocaproate",
+  "3-hydroxyoctanoate",
+  "hydroxyisobutyrate",
+  "C4-OH carnitine",
+  "tryptophan",
+  "p-hydroxyphenylacetate",
+  "phenyllactate",
+  "N-carbamoyl-beta-alanine",
+  "N6,N6,N6-trimethyllysine",
+  "sebacate")
+
+rename_metabolites <- list("hydroxyisocaproate" = "FA 6:0;OH",
+                           "3-hydroxyoctanoate"= "FA 8:0;3OH",
+                           "hydroxyisobutyrate" = "FA 4:0;OH",
+                           "C4-OH carnitine" = "CAR 4:0;OH",
+                           "tryptophan" = "Tryptophan",
+                           "p-hydroxyphenylacetate"="p-Hydroxyphenylacetate",
+                           "phenyllactate" = "Phenyllactate",
+                           "N-carbamoyl-beta-alanine" = "N-carbamoyl-beta-alanine",
+                           "N6,N6,N6-trimethyllysine" = "N6,N6,N6-Trimethyllysine",
+                           "sebacate" = "Sebacate")
+
+color_top_hit <- TBM_mets_wide_summary$Metabolite %in% filter(names_ID,Metabolite %in% Metabolites)$Metabol_names
+
+options(ggrepel.max.overlaps = Inf)
+
+tmp <- TBM_mets_wide_summary
+tmp$Metabolite <- names_ID$Metabolite[match(TBM_mets_wide_summary$Metabolite, names_ID$Metabol_names)]
+rename_metabolites[tmp$Metabolite]
+
+x_logticks <- annotation_logticks(sides = "b", short = unit(0.05, "cm"), mid = unit(0.1, "cm"), long = unit(0.15, "cm"))
+
+p<-ggplot(data=tmp)+
+  geom_point(aes(x=2**Differences, 
+                 y=pvalue,
+                 fill=Abundance),
+             shape=21, stroke = 0,size=2.5,
+             alpha=1,
+             )+
+  
+  geom_point(data = tmp %>% filter(Metabolite %in% filter(names_ID,Metabolite %in% Metabolites)$Metabolite), 
+             aes(x = 2**Differences, y = pvalue), color = "black",shape=21, fill="#A2F001",size=2.5)+
+  #scale_color_manual(values = c("black", "green")) +
+  scale_fill_gradientn(guide = "colourbar", 
+                       colours = c(colour_scheme_outcome_L, "lightgrey", colour_scheme_outcome_R),
+                       breaks=c(-2,2),
+                       labels=c("Higher in NIC","Higher in TBM"), 
+                       limits = c(-color_limit, color_limit)) +
+  
+  labs(fill="Metabolite \nabundance    ",space="Lab")+#scale_x_log2(limits = 2**c(-5,5), breaks = c(1/32, 1/16, 1/8,1/4,1/2, 1,2,4,8, 16,32), labels = c(1/32, 1/16, 1/8,1/4,1/2, 1,2,4,8,16,32), name = "Ratio Vietnam vs. Indonesia")+
+  scale_y_continuous(trans=reverselog_trans(10), 
+                     breaks = trans_breaks("log10", function(x) 10^x), 
+                     labels = trans_format("log10", math_format(10^.x)), 
+                     name = "Unadjusted p-value")+
+  
+  scale_x_continuous(trans=log2_trans(), 
+                     breaks = c(1/32, 1/16, 1/8,1/4,1/2, 1,2,4,8, 16,32), 
+                     labels = c(1/32, 1/16, 1/8,1/4,1/2, 1,2,4,8,16,32),
+                     name = "Ratio TBM vs. Non-infectious control")+
+  x_logticks +
+  
+  geom_vline(xintercept=1, color='black',linewidth=0.2)+
+  geom_text_repel(max.overlaps = Inf,
+                  vjust = 0.52,
+                  hjust = 0.52,
+                  nudge_x = -0.01,
+                  box.padding = 0.5,
+                  direction = 'both',
+                  xlim = c(-Inf, Inf),
+                  ylim = c(-2, Inf),
+                  lineheight = 1.1,
+                  min.segment.length = 0,
+                  size=3,
+                  aes(x=2**Differences,
+                      y= pvalue,
+                      label=ifelse(Metabolite %in% filter(names_ID,Metabolite %in% Metabolites)$Metabolite,
+                                   rename_metabolites[as.character(Metabolite)],''))) +
+  theme_classic()+
+  theme(text = element_text(size = 9))+
+  theme(legend.position="bottom")+
+  theme(legend.title = element_text(face="bold"))+coord_cartesian(xlim=c(1/4,4))+
+  theme(axis.title.x = element_text(face="bold", colour="black", size=15),
+            axis.title.y = element_text(face="bold", colour="black", size=15),
+            axis.text.y = element_text( colour="black", size=15),
+            axis.text.x = element_text( colour="black", size=13),
+            axis.ticks.x=element_blank(),
+            legend.text = element_text(size = 14),
+            legend.title = element_text( colour="black", size=15),
+            legend.key = element_rect(colour = NA),
+            strip.text=element_text(face = "bold",size=15))
+
+panel_height <- unit(0.5,"npc") - sum(ggplotGrob(p)[["widths"]][-3]) - unit(1,"line")
+p <- p + guides(fill= guide_colorbar(barwidth=panel_height))
+
+tiff(file=paste0(path_output,"/Figure_S1B.tiff"),res=600, units = 'in', width =8, height =8,compression = 'lzw')
+p
+dev.off()
+
+
+
+#export for Edwin to perform pathway analysis
+TBM_mets_wide_summary$Metabolite_name <- names_ID$Metabolite[match(TBM_mets_wide_summary$Metabolite, names_ID$Metabol_names)]
+
+TBM_mets_wide_summary <- TBM_mets_wide_summary[,c('Metabolite','Metabolite_name','TBM','Control','Differences','pvalue','FDR','Abundance')]
+
+save(TBM_mets_wide_summary,file="metabolites_TBMvsNIC_stats.Rdata")
+
+
+```
+
+check data: volcano plot TBM vs Other CNS
+
+```{r}
+library(ggrepel)
+
+# Step 1
+table(clinmet_full$diagnosis_ultimate, useNA = "always")
+clinmet_full_data_S8B<-clinmet_full %>% 
+  dplyr::filter(diagnosis_ultimate %in% c('Definite TBM','Probable TBM','Bacterial meningitis','Cryptococcal meningitis'))%>%
+  dplyr::select(c(2:470,478))%>%
+  dplyr::mutate(group = ifelse(diagnosis_ultimate %in% c("Definite TBM","Probable TBM") ,"TBM" ,"Control")) #change control to Non-infectious control later !
+table(clinmet_full_data_S8B$group)# 112    1067
+
+# step 2: summary
+clinmet_full_data_S8B %>%
+  tidyr::gather(key = "Metabolites", 
+                value = "log2(abundance)", 
+                QI09494_C18_neg:TF59_HILIC_neg) %>%
+  as.data.frame() -> TBM_mets_long
+
+TBM_mets_long_summary<- TBM_mets_long %>% group_by(Metabolites,group) %>% dplyr::summarise(median_mets=median(`log2(abundance)`,na.rm=T)) %>% ungroup() %>% as.data.frame()
+
+dim(TBM_mets_long_summary)#938   3
+table(TBM_mets_long_summary$group)
+
+# step 3: subgroup for each cohort
+TBM_mets_long_summary %>%
+  dplyr::filter(group == "TBM") %>%
+  as.data.frame() -> TBM_mets_long_summary_TBM
+
+TBM_mets_long_summary%>%
+  dplyr::filter(group == "Control") %>%
+  as.data.frame() -> TBM_mets_long_summary_Control
+
+TBM_mets_wide_summary <- cbind(TBM_mets_long_summary_TBM[,c(1,3)],TBM_mets_long_summary_Control[,3])
+names(TBM_mets_wide_summary) <- c("Metabolite", "TBM","Control")
+
+TBM_mets_wide_summary$Differences <- TBM_mets_wide_summary$TBM - TBM_mets_wide_summary$Control
+
+
+# Step 4: Wilcoxon test to see significantly different metabolites between cohorts (using Wilcoxon because metabolite abundance is not normally distributed)
+TBM_mets_pvalue<- lapply(split(TBM_mets_long, TBM_mets_long$Metabolites),function(x) wilcox.test(`log2(abundance)` ~ group, data = x)$p.value)
+
+table((names(TBM_mets_pvalue) == TBM_mets_wide_summary$Metabolite))# 333 TRUE
+table((names(TBM_mets_pvalue) %in% TBM_mets_wide_summary$Metabolite))# 469 TRUE
+
+TBM_mets_wide_summary$pvalue<-TBM_mets_pvalue[TBM_mets_wide_summary$Metabolite]
+
+# Step 5: test TF02_C8_pos
+TBM_mets_wide_summary %>% dplyr::filter(Metabolite == "TF02_C8_pos")
+test<-TBM_mets_long %>% dplyr::filter(Metabolites == "TF02_C8_pos")  
+
+ggplot(test,aes(x= test$group, y = test$"log2(abundance)"))+
+  geom_boxplot()+
+  stat_compare_means()
+
+# Step 6: FDR
+TBM_mets_wide_summary$pvalue <- as.numeric(TBM_mets_wide_summary$pvalue)
+TBM_mets_wide_summary$FDR <- p.adjust(TBM_mets_wide_summary$pvalue, method = 'BH')
+
+#Filtering out the most extreme metabolites with a FDR < 1^-10
+extreme_pvalues <- TBM_mets_wide_summary %>% dplyr::filter(FDR < 1e-10) %>%as.data.frame()
+list_met_extreme_pvalues <- extreme_pvalues$Metabolite
+
+wilcoxon_extreme_met <- TBM_mets_long %>% dplyr::filter(Metabolites %in% list_met_extreme_pvalues) %>%as.data.frame()
+dim(wilcoxon_extreme_met)# 344147      4
+
+# step 7: visualization
+TBM_mets_wide_summary$Abundance <- 0
+TBM_mets_wide_summary$Abundance[TBM_mets_wide_summary$pvalue <0.05]<- TBM_mets_wide_summary$Differences[TBM_mets_wide_summary$pvalue <0.05]
+TBM_mets_wide_summary %<>% arrange(desc(pvalue))
+
+color_limit <- max(-min(TBM_mets_wide_summary[,"Abundance"], na.rm = TRUE), max(TBM_mets_wide_summary[, "Abundance"], na.rm = TRUE), na.rm=TRUE)*1.01
+
+colour_scheme_outcome_L <- c("blue", "cornflowerblue")
+colour_scheme_outcome_R <- c("tomato", "red")
+
+Metabolites <- c(
+  "hydroxyisocaproate",
+  "3-hydroxyoctanoate",
+  "hydroxyisobutyrate",
+  "C4-OH carnitine",
+  "tryptophan",
+  "p-hydroxyphenylacetate",
+  "phenyllactate",
+  "N-carbamoyl-beta-alanine",
+  "N6,N6,N6-trimethyllysine",
+  "sebacate")
+
+rename_metabolites <- list("hydroxyisocaproate" = "FA 6:0;OH",
+                           "3-hydroxyoctanoate"= "FA 8:0;3OH",
+                           "hydroxyisobutyrate" = "FA 4:0;OH",
+                           "C4-OH carnitine" = "CAR 4:0;OH",
+                           "tryptophan" = "Tryptophan",
+                           "p-hydroxyphenylacetate"="p-Hydroxyphenylacetate",
+                           "phenyllactate" = "Phenyllactate",
+                           "N-carbamoyl-beta-alanine" = "N-carbamoyl-beta-alanine",
+                           "N6,N6,N6-trimethyllysine" = "N6,N6,N6-Trimethyllysine",
+                           "sebacate" = "Sebacate")
+
+color_top_hit <- TBM_mets_wide_summary$Metabolite %in% filter(names_ID,Metabolite %in% Metabolites)$Metabol_names
+
+options(ggrepel.max.overlaps = Inf)
+
+tmp <- TBM_mets_wide_summary
+tmp$Metabolite <- names_ID$Metabolite[match(TBM_mets_wide_summary$Metabolite, names_ID$Metabol_names)]
+rename_metabolites[tmp$Metabolite]
+
+x_logticks <- annotation_logticks(sides = "b", short = unit(0.05, "cm"), mid = unit(0.1, "cm"), long = unit(0.15, "cm"))
+
+p<-ggplot(data=tmp)+
+  geom_point(aes(x=2**Differences, 
+                 y=pvalue,
+                 fill=Abundance),
+             shape=21, stroke = 0,size=2.5,
+             alpha=1,
+             )+
+  
+  # geom_point(data = tmp %>% filter(Metabolite %in% filter(names_ID,Metabolite %in% Metabolites)$Metabolite), 
+  #            aes(x = 2**Differences, y = pvalue), color = "black",shape=21, fill="#A2F001",size=2.5)+
+  #scale_color_manual(values = c("black", "green")) +
+  scale_fill_gradientn(guide = "colourbar", 
+                       colours = c(colour_scheme_outcome_L, "lightgrey", colour_scheme_outcome_R),
+                       breaks=c(-1,1),
+                       labels=c("Higher in Other CNS","Higher in TBM"), 
+                       limits = c(-color_limit, color_limit)) +
+  
+  labs(fill="Metabolite \nabundance    ",space="Lab")+#scale_x_log2(limits = 2**c(-5,5), breaks = c(1/32, 1/16, 1/8,1/4,1/2, 1,2,4,8, 16,32), labels = c(1/32, 1/16, 1/8,1/4,1/2, 1,2,4,8,16,32), name = "Ratio Vietnam vs. Indonesia")+
+  scale_y_continuous(trans=reverselog_trans(10), 
+                     breaks = trans_breaks("log10", function(x) 10^x), 
+                     labels = trans_format("log10", math_format(10^.x)), 
+                     name = "Unadjusted p-value")+
+  
+  scale_x_continuous(trans=log2_trans(), 
+                     breaks = c(1/32, 1/16, 1/8,1/4,1/2, 1,2,4,8, 16,32), 
+                     labels = c(1/32, 1/16, 1/8,1/4,1/2, 1,2,4,8,16,32),
+                     name = "Ratio TBM vs. Other CNS Infection")+
+  x_logticks +
+  
+  geom_vline(xintercept=1, color='black',linewidth=0.2)+
+  geom_hline(yintercept=0.05, color='black',linewidth=0.2,linetype='dashed')+
+  geom_vline(xintercept=2, color='black',linewidth=0.2,linetype='dashed')+
+  geom_vline(xintercept=0.5, color='black',linewidth=0.2,linetype='dashed')+
+  theme_classic()+
+  theme(text = element_text(size = 9))+
+  theme(legend.position="bottom")+
+  theme(legend.title = element_text(face="bold"))+coord_cartesian(xlim=c(1/4,4))+
+  theme(axis.title.x = element_text(face="bold", colour="black", size=15),
+            axis.title.y = element_text(face="bold", colour="black", size=15),
+            axis.text.y = element_text( colour="black", size=15),
+            axis.text.x = element_text( colour="black", size=13),
+            axis.ticks.x=element_blank(),
+            legend.text = element_text(size = 14),
+            legend.title = element_text( colour="black", size=15),
+            legend.key = element_rect(colour = NA),
+            strip.text=element_text(face = "bold",size=15)) + guides(fill= guide_colorbar(barwidth=5))
+
+panel_height <- unit(0.5,"npc") - sum(ggplotGrob(p)[["widths"]][-3]) - unit(0.5,"line")
+p <- p + guides(fill= guide_colorbar(barwidth=panel_height))
+p
+
+
+tiff(file=paste0(path_output,"/Figure_Volcano_TBMvsOtherCNS.tiff"),res=600, units = 'in', width =12, height =12,compression = 'lzw')
+p
+dev.off()
+
+
+met_log2fc_TBMvsOtherCNS <- tmp
+save(met_log2fc_TBMvsOtherCNS,file='met_log2fc_TBMvsOtherCNS.Rdata')
+
+
+clinmet_full_TBM_OCNS<-clinmet_full %>% 
+  dplyr::filter(diagnosis_ultimate %in% c('Definite TBM','Probable TBM','Bacterial meningitis','Cryptococcal meningitis'))%>%
+  dplyr::select(c(1:470,478))%>%
+  dplyr::mutate(group = ifelse(diagnosis_ultimate %in% c("Definite TBM","Probable TBM") ,"TBM" ,"OCNS")) #change control to Non-infectious control later !
+table(clinmet_full_TBM_OCNS$group) #112 1067
+save(clinmet_full_TBM_OCNS,file='clinmet_full_TBM_OCNS.Rdata')
+
+```
+
+### Figure S1C:
+
+```{r}
+library("factoextra")
+clinmet_full_data <- clinmet_full 
+clinmet_full_data <- clinmet_full_data[complete.cases(clinmet_full_data[met_names]),]
+pca_indo <- prcomp(clinmet_full_data[, met_names], center = T, scale. = T)
+
+table(clinmet_full_data$diag_combine)# 54                    110                   1062
+table(clinmet_full_data$diagnosis_ultimate)# 49  , 61,  682, 54  ,  380 
+
+clinmet_full_data_S8<-clinmet_full_data %>% mutate(
+  diag_combine_2 = case_when( diag_combine == "Other CNS infection" & 
+                                diagnosis_ultimate == "Bacterial meningitis" ~ "Bacterial meningitis",
+                              
+                               diag_combine == "Other CNS infection" & 
+                                diagnosis_ultimate == "Cryptococcal meningitis" ~ "Cryptococcal meningitis",
+                              
+                              diag_combine == "Non-infectious control" ~ "Non-infectious control",
+                               diag_combine == "TBM" ~ "TBM"
+                                ))
+
+clinmet_full_data_S8 %<>% mutate(diag_combine_2 = factor(diag_combine_2,levels = c('Non-infectious control',
+                                                                                   'Bacterial meningitis',
+                                                                                   'Cryptococcal meningitis',
+                                                                                   'TBM'
+                                                                                   
+                                                                                   
+                                                                                   )))
+
+table(clinmet_full_data_S8$diag_combine_2, useNA = "always")
+
+p1 <- fviz_pca_ind(pca_indo, geom.ind = "point", pointshape = 21, 
+                   pointsize = 5, alpha=0.7,
+                   fill.ind = clinmet_full_data_S8$diag_combine_2, 
+                   col.ind = "grey50", 
+                   palette = c("#bebada", "#ebbb8b", "#A3BE8C", "#81A1C1"),
+                   addEllipses = TRUE,
+                   label = "var",
+                   col.var = "black",
+                   repel = TRUE,
+                   legend.title = "Etiology",
+                   title="")+ theme_classic()+
+  theme(text = element_text(size = 9))+
+  theme(legend.position="bottom")+
+  labs(x = "PC1 (41%)", y = "PC2 (7.2%)")+
+  theme(plot.title = element_text(face="bold",size=9))+
+  theme(legend.title = element_text(face="bold")) +
+  theme(axis.title.x = element_text(face="bold", colour="black", size=15),
+        axis.title.y = element_text(face="bold", colour="black", size=15),
+        axis.text.y = element_text( colour="black", size=15),
+        axis.text.x = element_text( colour="black", size=13),
+        axis.ticks.x=element_blank(),
+        legend.text = element_text(size = 14),
+        legend.title = element_text( colour="black", size=15),
+        legend.key = element_rect(colour = NA),
+        strip.text=element_text(face = "bold",size=15))+
+  scale_color_manual(values=c("#bebada", "#ebbb8b", "#A3BE8C", "#81A1C1"))+
+  scale_fill_manual(values=c("#bebada", "#ebbb8b", "#A3BE8C", "#81A1C1"))
+
+#Export
+tiff(file=paste0(path_output,"/Figure_S1C.tiff"),res=450, units = 'in', width = 10, height =10,compression = 'lzw')
+p1
+dev.off()
+
+```
+
+### Figure S1D:
+
+```{r}
+
+print(load(file="Derive_Results/IN_correlation_learning_set_2022_10_12.Rdata"))
+Metabol_names<-colnames(branks)
+branks<-as.matrix(branks)
+branks_sum<-matrixStats::colQuantiles(branks,probs = c(0.025,0.975,0.5)) %>% as.data.frame()
+branks_sum$means_ranks<-colMeans(branks)
+
+#branks_sum<- as.data.frame(branks_sum) %>% arrange(means_ranks)
+branks_sum<- as.data.frame(branks_sum)
+branks_sum<- branks_sum[order(branks_sum$means_ranks), , drop = FALSE]
+
+
+names(branks_sum)[1:3]<-paste0("rank-",colnames(branks_sum[,1:3]))
+branks_sum$Metabol_names<-rownames(branks_sum)
+
+dat<-branks_sum %>% mutate(name = reorder(Metabol_names, desc(`rank-50%`)))
+branks_sum_IN<-branks_sum
+
+print(load(file="Derive_Results/HRs_IN.Rdata"))
+
+
+dat_HR_IN<-merge(branks_sum_IN,HRs,by="Metabol_names") %>% arrange((`rank-50%`))
+dat_HR_IN$select<-ifelse(((dat_HR_IN[,"rank-2.5%"]<=75 & dat_HR_IN[,"rank-97.5%"]<=225)|
+                           (dat_HR_IN[,"rank-2.5%"]>=244 & dat_HR_IN[,"rank-97.5%"]>=394))& dat_HR_IN$significant_screening=="yes","yes","no")
+
+table(dat_HR_IN$select) #361 108: 107 + 1 unknown compound
+
+dat.plot_IN<-dat_HR_IN %>% filter(select=="yes") %>% arrange(desc(`rank-50%`))
+Metabol_tophit_names_IN<-dat.plot_IN$Metabol_names
+
+dim(branks_sum)# 469   5
+dat<-branks_sum %>%
+  mutate(name = reorder(Metabol_names, desc(`rank-50%`)),
+         Selection=ifelse(Metabol_names%in%Metabol_tophit_names_IN,
+                       ifelse(means_ranks>225,"Protective","Harmful"),"un-selected"))
+
+summary(branks_sum$means_ranks)
+
+dat<-branks_sum %>%
+  mutate(name = reorder(Metabol_names, desc(`rank-50%`)),
+         Selection=case_when(
+         Metabol_names %in% dat.plot_IN$Metabol_names & Metabol_names != "TF21_HILIC_pos" & branks_sum$"rank-2.5%"  >=244 &  branks_sum$"rank-97.5%">=394~ "Protective",
+         Metabol_names %in% dat.plot_IN$Metabol_names & Metabol_names != "TF21_HILIC_pos" & branks_sum$"rank-2.5%"  <=75 &  branks_sum$"rank-97.5%"<=225  ~ "Harmful",
+         T ~ "un-selected"
+         ))
+
+table(dat$Selection)#         101           6         362 tophit
+
+dat%>% 
+  ggplot( aes(x=name, y=`rank-50%`,group=Selection,color=Selection)) +
+    geom_point() +
+  geom_errorbar(aes(ymin = `rank-2.5%`, ymax = `rank-97.5%`),alpha=0.5)+
+  #scale_color_manual(values=c("#de2d26","#2ca25f","#bcbddc"))+
+ scale_color_manual(values=c("#A50026","#313695","#bdbdbd"))+
+  scale_fill_manual(values=c("#A50026","#313695","#bdbdbd"))+
+  theme(axis.text.y = element_blank())+
+  geom_hline(yintercept =c(75,225,244,394), linetype = 'dashed', color= 'red',size=1)+
+    coord_flip() +
+    xlab("") +
+    theme_bw()+ theme(legend.position="bottom")+ylab("Distribution ranking of  metabolite-mortality associations")+
+  
+  theme(panel.grid.minor = element_blank(),
+        axis.title.x = element_text(face="bold", colour="black", size=15),
+        axis.title.y = element_text(face="bold", colour="black", size=15),
+        axis.text.y = element_blank(),
+        axis.text.x = element_text( colour="black", size=13),
+        axis.ticks.x=element_blank(),
+        axis.ticks.y=element_blank(),
+        legend.text = element_text(size = 15),
+        legend.title = element_text( colour="black", size=12),
+        legend.key = element_rect(colour = NA),
+        strip.text=element_text(face = "bold",size=12))+ggtitle("Bi-directional ranking
+") +  theme(plot.title = element_text(hjust = 0.5,face="bold", colour="black", size=20))->p
+
+
+#Export
+tiff(file=paste0(path_output,"/Figure_S1D.tiff"),res=480, units = 'in', width = 10, height =10,compression = 'lzw')
+p
+dev.off()
+
+```
+
+### Figure S1E:
+
+```{r}
+
+dat.plot_IN<-dat_HR_IN %>% filter(select=="yes") %>% arrange(desc(`rank-50%`))
+Metabol_tophit_names_IN<-dat.plot_IN$Metabol_names
+
+names_ID<-subset(untargeted_annotated,select=c("CompoundID","Metabolite"))
+names_ID$Metabol_names<-gsub("-", "_", names_ID$CompoundID, fixed = TRUE)
+
+dat.plot_IN<-merge(dat.plot_IN,names_ID,by="Metabol_names") 
+dat.plot_IN%<>% filter(Metabolite!='Unknown_of_interest')
+
+dat.plot_IN %<>% mutate(Metabolite = plyr::mapvalues(dat.plot_IN$Metabolite,
+                                                     from = names(rename_metabolites),
+                                                     to = unname(unlist(rename_metabolites))))
+
+p1<-dat.plot_IN %>% mutate(name = reorder(Metabolite, desc(`rank-50%`))) %>%
+  ggplot( aes(x=name, y=`rank-50%`)) +
+    geom_point(aes(col="red"),size=2) +
+  geom_errorbar(aes(ymin = `rank-2.5%`, ymax = `rank-97.5%`,alpha=0.01),size=1)+
+  theme_classic()+
+  theme(axis.text.y = element_blank())+
+  geom_hline(yintercept =c(75,225,244,394), linetype = 'dashed', color= 'red',size=1)+
+    coord_flip() +
+    xlab("") +ylab("Rank on HR")+
+  ggtitle("Top-hit ranking \n (Indonesia)")+
+    theme_bw()+ theme(legend.position="none")+theme(panel.grid.minor = element_blank(),axis.title.x = element_text(face="bold", colour="black", size=13),
+        axis.title.y = element_text(face="bold", colour="black", size=13),
+        axis.text.y = element_text(face="bold", colour="black", size=13),
+        axis.text.x = element_text( colour="black", size=13),
+        axis.ticks.x=element_blank(),
+        legend.text = element_text(size = 15),
+        legend.title = element_text( colour="black", size=13),
+        legend.key = element_rect(colour = NA),
+        strip.text=element_text(face = "bold",size=18),
+        plot.title = element_text(face = "bold",size=18,hjust = 0.5))
+
+p2<-dat.plot_IN%>% mutate(name = reorder(Metabolite, desc(`rank-50%`))) %>%
+  ggplot( aes(x=name, y=log.HR.est_screening)) +
+    geom_point(aes(col=significant_screening),size=2)+
+  scale_color_manual(values=c("#116400","#001164"))+
+   scale_color_manual(values=c("grey40","#001164"))+
+  scale_y_continuous(breaks=log(c(1/256,1/32,1/8,1/2,1,2,4,8)),labels=c(expression(1/256),expression(1/32),expression(1/8),expression(1/2),1,2,4,8))+
+  geom_errorbar(aes(ymin = log.HR.low_screening, ymax =log.HR.hi_screening,alpha=0.01,col=significant_screening),size=1)+
+  theme_classic()+
+  theme(axis.text.y = element_blank())+
+  geom_hline(yintercept =c(0), linetype = 'dashed', color= '#001164',size=1) +
+      coord_flip() +
+    xlab("") +ylab("Hazard ratio")+
+  ggtitle("Screening cohort \n (Indonesia)")+
+    theme_bw()+ theme(legend.position="none")+theme(panel.grid.minor = element_blank(),axis.title.x = element_text(face="bold", colour="black", size=13),
+        axis.title.y = element_text(face="bold", colour="black", size=13),
+        axis.text.y = element_text(face="bold", colour="black", size=13),
+        axis.text.x = element_text( colour="black", size=13),
+        axis.ticks.x=element_blank(),
+        legend.text = element_text(size = 15),
+        legend.title = element_text( colour="black", size=13),
+        legend.key = element_rect(colour = NA),
+        strip.text=element_text(face = "bold",size=13),
+        plot.title = element_text(face = "bold",size=18,hjust = 0.5))
+
+p3<-dat.plot_IN%>% mutate(name = reorder(Metabolite, desc(`rank-50%`))) %>%
+  ggplot( aes(x=name, y=log.HR.est_wc_validation)) +
+    geom_point(aes(col=significant_wc_validation),size=2)+scale_y_continuous(breaks=log(c(1/32,1/8,1/2,1,2,4,8)),labels=c(expression(1/32),expression(1/8),expression(1/2),1,2,4,8))+
+  geom_errorbar(aes(ymin = log.HR.low_wc_validation, ymax =log.HR.hi_wc_validation,alpha=0.01,col=significant_wc_validation),size=1)+
+  scale_color_manual(values=c("#116400","#001164"))+
+  theme_classic()+
+  theme(axis.text.y = element_blank())+
+  geom_hline(yintercept =c(0), linetype = 'dashed', color= "#001164",size=1)+
+      coord_flip() +
+    xlab("") +ylab("Hazard ratio")+
+  ggtitle("Within-cohort validation \n (Indonesia)")+
+    theme_bw()+ theme(legend.position="none")+theme(panel.grid.minor = element_blank(),axis.title.x = element_text(face="bold", colour="black", size=13),
+        axis.title.y = element_text(face="bold", colour="black", size=13),
+        axis.text.y = element_blank(),
+        axis.text.x = element_text( colour="black", size=13),
+        axis.ticks.x=element_blank(),
+        legend.text = element_text(size = 15),
+        legend.title = element_text( colour="black", size=13),
+        legend.key = element_rect(colour = NA),
+        strip.text=element_text(face = "bold",size=13),
+        plot.title = element_text(face = "bold",size=18,hjust = 0.5))
+
+
+p4<-dat.plot_IN%>% mutate(name = reorder(Metabolite, desc(`rank-50%`))) %>%
+  ggplot( aes(x=name, y=log.HR.est_VN_validation)) +
+    geom_point(aes(col=significant_external_validation),size=2)+scale_y_continuous(breaks=log(c(1/32,1/8,1/2,1,2,4,8)),labels=c(expression(1/32),expression(1/8),expression(1/2),1,2,4,8))+
+  geom_errorbar(aes(ymin = log.HR.low_VN_validation, ymax =log.HR.hi_VN_validation,alpha=0.01,col=significant_external_validation),size=1)+
+  scale_color_manual(values=c("#116400","#001164"))+
+  theme_classic()+
+  theme(axis.text.y = element_blank())+
+  geom_hline(yintercept =c(0), linetype = 'dashed', color= "#001164",size=1)+
+      coord_flip() +
+    xlab("") +ylab("Hazard ratio")+
+  ggtitle("External validation \n (Vietnam)")+
+    theme_bw()+ theme(legend.position="none")+theme(panel.grid.minor = element_blank(),axis.title.x = element_text(face="bold", colour="black", size=13),
+        axis.title.y = element_text(face="bold", colour="black", size=13),
+        axis.text.y = element_blank(),
+        axis.text.x = element_text( colour="black", size=13),
+        axis.ticks.x=element_blank(),
+        legend.text = element_text(size = 15),
+        legend.title = element_text( colour="black", size=13),
+        legend.key = element_rect(colour = NA),
+        strip.text=element_text(face = "bold",size=13),
+        plot.title = element_text(face = "bold",size=18,hjust = 0.5))
+
+tiff(file=paste0(path_output,"/Figure_S1E_long.tiff"),res=480, units = 'in', width = 17, height =30,compression = 'lzw')
+cowplot::plot_grid(p2,p3,p4, nrow = 1,rel_widths = c(0.4, 0.18,0.18))
+dev.off()
+
+```
