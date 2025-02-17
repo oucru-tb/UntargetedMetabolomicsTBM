@@ -39,9 +39,9 @@ source("Rfunctions/cforest.R")
 source("Rfunctions/glm.R")
 source("Rfunctions/additional_functions.R")
 
-path_input  <- 'C:/Users/triettm/OneDrive - Oxford University Clinical Research Unit/#OUCRU-TB/#oucru-tb/ultimate_untargeted_metabolites/raw_data'
-path_output <- "C:/Users/triettm/OneDrive - Oxford University Clinical Research Unit/#OUCRU-TB/#oucru-tb/ultimate_untargeted_metabolites/results/Version2_1_Dec/Nov19_final/update"
-path_code   <- 'W:/#oucru-tb/ultimate_untargeted_metabolites/R_codes'
+path_input  <- ""
+path_output <- ""
+path_code   <- ""
 
 mcore<-1
 ```
