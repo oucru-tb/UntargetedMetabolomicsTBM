@@ -39,18 +39,20 @@ source("Rfunctions/cforest.R")
 source("Rfunctions/glm.R")
 source("Rfunctions/additional_functions.R")
 
-path_input  <- ""
-path_output <- ""
-path_code   <- ""
+path_input  <- 'C:/Users/triettm/OneDrive - Oxford University Clinical Research Unit/#OUCRU-TB/#oucru-tb/ultimate_untargeted_metabolites/raw_data'
+path_output <- "C:/Users/triettm/OneDrive - Oxford University Clinical Research Unit/#OUCRU-TB/#oucru-tb/ultimate_untargeted_metabolites/results/Version2_1_Dec/Nov19_final/update"
+path_code   <- 'W:/#oucru-tb/ultimate_untargeted_metabolites/R_codes'
 
 mcore<-1
 ```
 
 ## Introduction
 
-This markdown file contains the code to generate figures in Metabolites Paper.
+This R markdown file contains the code to generate figures and tables in Metabolites Paper [DOI:].
 
-Main figures include:
+1. Figures
+
+Main figures include 5 figures (10 sub-figures):
 
 -   **Figure 1A: Relationship between metabolite abundance (log2 transformed) and estimated mortality (logisticcurve)**
 -   **Figure 1B: Correlation plot for the 10 identified metabolites with Spearman's correlations using hierarchical clustering**
@@ -59,21 +61,477 @@ Main figures include:
 -   **Figure 2B: The scatter plot visualized TBM patients following their log2-transformed CSF tryptophan and FA 8:0; 3OH concentrations, colored according to their day 60 outcome**
 -   Figure 2C: Causal diagram showing the hypothesized relationship between CSF metabolites, TBM severity and mortality
 -   **Figure 2D: Forest plots visualizing the estimates of direct and indirect impact of all top-hit metabolites on mortality**
--   Figure 3: Log2 fold changes for TBM patients vs. and non-infectious controls (NIC) in CSF and serum for top-hits following a previous cohort (van Laarhoven et al., 2018).
+-   *Figure 3: Log2 fold changes for TBM patients vs. and non-infectious controls (NIC) in CSF and serum for top-hits following a previous cohort (van Laarhoven et al., 2018).*
 -   **Figure 4: Metabolite clustering and correlation with clinical characteristics.**
 -   Figure 5: Diagram on dysregulated neuronal beta-oxidation as a source of the hydroxylated fatty acids that were associated to increased TBM mortality.
 
-Supplementary figures include:
+--
+
+Supplementary figures include 6 figures (11 sub-figures):
 
 -   **Figure S1A: Spearman correlations and clustering of pre-treatment CSF metabolites**
 -   **Figure S1B: Metabolite abundance ratio of TBM vs. non-infectious control**
 -   **Figure S1C: Principal component projection of metabolite profiles in patients with TBM, bacterial meningitis, cryptococcal meningitis, and non-infectious controls**
 -   **Figure S1D: Bi-directional ranking metabolites with regard to the association with two month mortality**
 -   **Figure S1E: Ranking and forest plot of top-ranking metabolites.**
--   Figure S2.1: Abundances of available fatty acids in CSF and serum of TBM patients and non-infectious controls (NIC) and Spearman correlations with clinical parameters
--   Figure S2.2: Abundances of available carnitines in CSF and serum of TBM patients and non-infectious controls (NIC) and Spearman correlations with clinical parameters
+-   *Figure S2.1: Abundances of available fatty acids in CSF and serum of TBM patients and non-infectious controls (NIC) and Spearman correlations with clinical parameters*
+-   *Figure S2.2: Abundances of available carnitines in CSF and serum of TBM patients and non-infectious controls (NIC) and Spearman correlations with clinical parameters*
 -   Figure S3: Analysis workflow diagram
--   Figure S4: LC-MS-based analytical platform
+-   *Figure S4: LC-MS-based analytical platform
+-   Figure S5: Sub-sampling ranking procedure
+-   *Figure S6: Top-hit metabolite’s stability over time*
+
+2. Tables:
+
+Main tables include 2 tables:
+- **Table 1: Baseline clinical characteristics of study participants in Indonesia and Vietnam**
+- *Table 2: CSF metabolites associated with mortality in both cohorts*
+
+Supplementary tables include 9 tables:
+- **Table S1: Clinical characteristics association with TBM mortality-univariate analysis, related to Table 1.**
+- *Table S2: Patient’s characteristics of TBM in compared with other meningitis, related Table 1*
+- *Table S3: Association of top-hit metabolites with 6-month mortality in both cohorts, related to Table 2.*
+- *Table S4: Pathway enrichment analysis for day 60 mortality, related to Figure 1 and Table 2.*
+- *Table S5: Metabolites associated with mortality, related to Figure 1 and Table 2.*
+- *Table S6: TBM severity (MRC grade) and log2-transformed peak ion abundances for the metabolites associated associated to outcome, related to Figure 2.*
+- *Table S7: Causal mediation analysis of the impact of the pre-treatment metabolites to mortality by TBM severity, related to Figure 2.*
+- *Table S8: Distribution of log2-transformed peak ion abundances for the metabolites associated to outcome, stratified by HIV groups, related to Figure 4.*
+- *Table S9: Summary statistics for all metabolites included in the primary and secondary analyses, related to Figure 3.*
+
+
+## Main tables:
+
+### Table 1:
+```{r}
+dat<-clinmet %>% filter(diagnosis_ultimate2=="TBM")
+
+tab<-dat %>% dplyr::select(cohort,sex,age,diagnosis_ultimate,HIV,TBM_grade,GCS,CSF_leukocytes,CSF_polymorphonuclear_cells,CSF_mononuclear_cells,CSF_protein,
+               CSF_blood_glucose_ratio,Ct,outcome_60) %>%
+            tbl_summary(by = cohort,
+                        missing = "ifany", # don't list missing data separately
+                        label= list(Ct ~ "Mean GeneXpert Ct value",
+                                    age ~ "Age",
+                                    sex ~ "Gender",
+                                    TBM_grade~"MRC grade",
+                                    HIV~"HIV infection status",
+                                    outcome_60~"60 days mortality",
+                                    diagnosis_ultimate~"Diagnostic category"))%>%
+  #add_overall() %>% 
+  add_n %>% # add column with total number of non-missing observations
+  add_p() %>% # test for a difference between groups # don't list missing data separately
+  modify_header(label = "**Variable**") %>% # update the column header
+  bold_labels()#%>%
+  #gtsummary::as_tibble() %>% writexl::write_xlsx(., "Table_1.xlsx")
+tab
+```
+
+### Table 2:
+
+```{r}
+print(load("Derive_Results/Metabol_tophit_names_IN_validated.Rdata"))
+dat_top_hit_within_cohort_validate_IN <- subset(TBM_dat_IN[index_validation_IN,],select=c(Metabol_tophit_names_IN_validated,"age","HIV","ttdeath_2m","evdeath_2m"))
+dat_top_hit_external_validate_IN <- subset(TBM_dat_VN,select=c(Metabol_tophit_names_IN_validated,"age","HIV","ttdeath_2m","evdeath_2m"))
+dat_top_hit_discovery_IN <- subset(TBM_dat_IN,select=c(Metabol_tophit_names_IN_validated,"age","HIV","ttdeath_2m","evdeath_2m"))
+
+dat_top_hit_within_cohort_validate_IN_2 <- subset(TBM_dat_IN[index_validation_IN,],select=c(Metabol_tophit_names_IN_validated,"age","HIV","ttdeath_2m","evdeath_2m","cohort"))
+dat_top_hit_external_validate_IN_2 <- subset(TBM_dat_VN,select=c(Metabol_tophit_names_IN_validated,"age","HIV","ttdeath_2m","evdeath_2m","cohort"))
+dat_top_hit_discovery_IN_2 <- subset(TBM_dat_IN,select=c(Metabol_tophit_names_IN_validated,"age","HIV","ttdeath_2m","evdeath_2m","cohort"))
+
+Metabol_tophit_names_IN_validated <- plyr::mapvalues(Metabol_tophit_names_IN_validated, from = names_ID$Metabol_names, to = names_ID$Metabolite)
+
+names(dat_top_hit_within_cohort_validate_IN) <- plyr::mapvalues(names(dat_top_hit_within_cohort_validate_IN), from = names_ID$Metabol_names, to = names_ID$Metabolite)
+
+names(dat_top_hit_external_validate_IN) <- plyr::mapvalues(names(dat_top_hit_external_validate_IN), from = names_ID$Metabol_names, to = names_ID$Metabolite)
+
+names(dat_top_hit_discovery_IN) <- plyr::mapvalues(names(dat_top_hit_discovery_IN), from = names_ID$Metabol_names, to = names_ID$Metabolite)
+
+names(dat_top_hit_within_cohort_validate_IN_2) <- plyr::mapvalues(names(dat_top_hit_within_cohort_validate_IN_2), from = names_ID$Metabol_names, to = names_ID$Metabolite)
+
+names(dat_top_hit_external_validate_IN_2) <- plyr::mapvalues(names(dat_top_hit_external_validate_IN_2), from = names_ID$Metabol_names, to = names_ID$Metabolite)
+
+names(dat_top_hit_discovery_IN_2) <- plyr::mapvalues(names(dat_top_hit_discovery_IN_2), from = names_ID$Metabol_names, to = names_ID$Metabolite)
+
+Metabol_tophit_names_IN_validated <- Metabol_tophit_names_IN_validated[Metabol_tophit_names_IN_validated!="Unknown_of_interest"]
+Metabol_tophit_names_IN_validated <- Metabol_tophit_names_IN_validated[c(2,5,7,8,6,3,4,1,9)]
+
+
+t<-list()
+for(i in 1:length(Metabol_tophit_names_IN_validated)){
+  dat_top_hit<-subset(dat_top_hit_within_cohort_validate_IN,select=c(Metabol_tophit_names_IN_validated[i],"age","HIV","ttdeath_2m","evdeath_2m"))
+  t[[i]]<-coxph(Surv(ttdeath_2m,evdeath_2m)~ .,data=dat_top_hit) %>%  tbl_regression(exponentiate = T,include=Metabol_tophit_names_IN_validated[i])
+}
+tbl_stack_ex1 <- tbl_stack(t)
+tl1<-tbl_stack_ex1 %>% add_q(method="BH"
+                             ) %>%  bold_p(t = 0.05,q = TRUE) %>% bold_labels()
+
+tbl_stack_ex1 %>% add_q(method="fdr")
+tbl_stack_ex1 %>% add_q(method="BH")
+tbl_stack_ex1 %>% add_q(method="fdr")
+
+
+for(i in 1: length(Metabol_tophit_names_IN_validated)){
+  dat_top_hit<-subset(dat_top_hit_external_validate_IN,select=c(Metabol_tophit_names_IN_validated[i],"age","HIV","ttdeath_2m","evdeath_2m"))
+  t[[i]]<-coxph(Surv(ttdeath_2m,evdeath_2m)~ .,data=dat_top_hit) %>%  tbl_regression(exponentiate = T,include=Metabol_tophit_names_IN_validated[i])
+}
+tbl_stack_ex2 <- tbl_stack(t)
+tl2<-tbl_stack_ex2 %>% add_q(method="BH") %>%  bold_p(t = 0.05,q = TRUE) %>% bold_labels()
+
+
+for(i in 1: length(Metabol_tophit_names_IN_validated)){
+  dat_top_hit<-subset(dat_top_hit_discovery_IN,select=c(Metabol_tophit_names_IN_validated[i],"age","HIV","ttdeath_2m","evdeath_2m"))
+  t[[i]]<-coxph(Surv(ttdeath_2m,evdeath_2m)~ .,data=dat_top_hit) %>%  tbl_regression(exponentiate = T,include=Metabol_tophit_names_IN_validated[i])
+}
+tbl_stack_ex3 <- tbl_stack(t)
+tl3<-tbl_stack_ex3 %>% add_q(method="BH") %>%  bold_p(t = 0.05,q = TRUE) %>% bold_labels()
+
+# Metabol_tophit_names_IN_validated<-Metabol_tophit_names_IN[which(tl2$table_body$q.value<0.05)]
+tbl<-tbl_merge(list(tl1, tl2,tl3), tab_spanner = c("Within-cohort validation \n (Indonesia)", "External validation\n (Vietnam)", "Discovery cohort \n (Indonesia)")) %>% bold_labels()
+
+p_interaction<-list()
+for(i in 1: length(Metabol_tophit_names_IN_validated)){
+  dat_top_hit<-rbind(subset(dat_top_hit_external_validate_IN_2,select=c(Metabol_tophit_names_IN_validated[i],"age","HIV","ttdeath_2m","evdeath_2m","cohort")),
+                     subset(dat_top_hit_discovery_IN_2,select=c(Metabol_tophit_names_IN_validated[i],"age","HIV","ttdeath_2m","evdeath_2m","cohort")))
+    p_interaction[[i]]<-round(summary(coxph(Surv(ttdeath_2m,evdeath_2m)~ .+cohort:.-cohort:(age+HIV),data=dat_top_hit))$coefficients[5,"Pr(>|z|)"],4)
+}
+
+(tbl %<>% modify_table_body(
+    ~ .x %>%
+      dplyr::mutate(P_interaction = unlist(p_interaction))
+  ) %>%
+  # assigning header labels
+  modify_header(P_interaction = "Test for heterogeneity",
+                label = "**Metabolites**")%>%
+  bold_labels()%>%
+  as_flex_table()) #%>%
+  #flextable::save_as_docx(path=paste0(path_Onedrive,"/Table_2_Univariable_results_IN_75_225.docx"),pr_section = sect_properties))
+```
+
+```{r}
+add_q_ex1 <-
+  trial |>
+  tbl_summary(by = trt, include = c(trt, age, grade, response)) |>
+  add_p() |>
+  add_q()
+
+# Example 2 ----------------------------------
+trial |>
+  tbl_uvregression(
+    y = response,
+    include = c("trt", "age", "grade"),
+    method = glm,
+    method.args = list(family = binomial),
+    exponentiate = TRUE
+  ) |>
+  add_global_p() |>
+  add_q('fdf')
+```
+
+
+```{r}
+print(load("Derive_Results/Univariable_results_VN_75_225.Rdata"))
+tbl_merge(list(tl1, tl2,tl3), tab_spanner = c("Within-cohort validation \n (Indonesia)", "External validation\n (Vietnam)", "Discovery cohort \n (Indonesia)")) %>% bold_labels()
+```
+
+
+## Supplementary Tables
+
+### Table S1:
+
+```{r}
+library(gtsummary)
+
+dat<-clinmet %>% filter(diagnosis_ultimate2=="TBM")
+tab<-dat %>% dplyr::select(cohort,sex,age,diagnosis_ultimate,GCS,TBM_grade,HIV,ttdeath_2m,evdeath_2m,outcome_60,CSF_leukocytes,CSF_polymorphonuclear_cells,CSF_mononuclear_cells,CSF_protein,CSF_blood_glucose_ratio,Ct)
+
+feats <- c('ttdeath_2m','evdeath_2m','sex','age','diagnosis_ultimate','GCS','TBM_grade','HIV','CSF_leukocytes','CSF_polymorphonuclear_cells',
+           'CSF_mononuclear_cells','CSF_protein','CSF_blood_glucose_ratio','Ct')
+
+tab %<>% mutate(CSF_leukocytes = log2(CSF_leukocytes+1),
+                CSF_polymorphonuclear_cells = log2(CSF_polymorphonuclear_cells+1),
+                CSF_mononuclear_cells = log2(CSF_mononuclear_cells+1),
+                CSF_protein = log2(CSF_protein+1))
+
+#_____________________________________________________________________________________________
+tmp <- tab %>% filter(cohort=='Vietnam') %>% dplyr::select(feats)
+res_VN <- tbl_uvregression(tmp,method = coxph,y = Surv(ttdeath_2m, evdeath_2m),
+                           exponentiate = TRUE,pvalue_fun = label_style_pvalue(digits = 2))
+
+tmp <- tab %>% filter(cohort=='Indonesia') %>% dplyr::select(feats)
+res_IN <- tbl_uvregression(tmp,method = coxph,y = Surv(ttdeath_2m, evdeath_2m),
+                           exponentiate = TRUE,pvalue_fun = label_style_pvalue(digits = 2))
+
+tbl_merge(
+    tbls = list(res_IN, res_VN),
+    tab_spanner = c( "**Indonesia Cohort**","**Vietnam Cohort**")
+  ) %>%
+  as_flex_table()
+
+```
+
+### Tabl_S2
+
+```{r}
+table(clinmet_full$diagnosis_ultimate2)
+dat<-clinmet_full
+dat %<>% mutate(TBM_grade=ifelse(TBM_grade=="Grade I",1,
+                                 ifelse(TBM_grade=="Grade II",2,
+                                        ifelse(TBM_grade=="Grade III",3,NA))))
+tab<-dat %>% dplyr::select(diagnosis_ultimate2,
+                           sex,
+                           age,
+                           #TBM_grade,
+                           HIV,
+                           #outcome_60,
+                           CSF_leukocytes,
+                           CSF_polymorphonuclear_cells,
+                           CSF_mononuclear_cells,
+                           CSF_protein,
+                           CSF_blood_glucose_ratio,
+                           #Ct,
+                           GCS) %>%
+            tbl_summary(by = diagnosis_ultimate2,
+                        missing = "ifany", # don't list missing data separately
+                        label= list(#Ct ~ "Mean GeneXpert Ct value",
+                                    age ~ "Age",
+                                    sex ~ "Gender",
+                                    #TBM_grade~"MRC grade",
+                                    HIV~"HIV infection status"#,
+                                    #outcome_60~"60 days mortality"
+                                    ))%>%
+  #add_overall() %>%
+  add_n() %>% # add column with total number of non-missing observations
+  add_p() %>% # test for a difference between groups # don't list missing data separately
+   modify_header(label = "**Variable**") %>% # update the column header
+  bold_labels()%>%
+  as_flex_table()#%>%
+  #flextable::save_as_docx(path=paste0(path_output,"/Table_S2_patient_characteristics_all_etiology.docx"))
+tab
+```
+
+#draft
+
+```{r}
+library(gtsummary)
+trp_mets <- c(
+  "hydroxyisocaproate",
+  "3-hydroxyoctanoate",
+  "hydroxyisobutyrate",
+  "C4-OH carnitine",
+  "tryptophan",
+  "p-hydroxyphenylacetate",
+  "phenyllactate",
+  "N-carbamoyl-beta-alanine",
+  "N6,N6,N6-trimethyllysine",
+  "sebacate")
+
+tmp <- data_pooled %>% filter(cohort=='Indonesia') %>% dplyr::select(all_of(c(trp_mets,'ttdeath_2m','evdeath_2m')))
+res_IN <- tbl_uvregression(tmp,method = coxph,y = Surv(ttdeath_2m, evdeath_2m),
+                           exponentiate = TRUE,pvalue_fun = label_style_pvalue(digits = 2))
+
+tmp <- data_pooled %>% filter(cohort=='Vietnam') %>% dplyr::select(all_of(c(trp_mets,'ttdeath_2m','evdeath_2m')))
+res_VN <- tbl_uvregression(tmp,method = coxph,y = Surv(ttdeath_2m, evdeath_2m),
+                           exponentiate = TRUE,pvalue_fun = label_style_pvalue(digits = 2))
+
+tbl_merge(
+    tbls = list(res_IN, res_VN),
+    tab_spanner = c( "**Indonesia Cohort**","**Vietnam Cohort**")
+  ) %>%
+  as_flex_table()
+
+```
+
+
+
+### Table 2:
+
+```{r}
+print(load(file="Derive_Results/Metabol_tophit_names_VN_validated.Rdata"))
+print(load(file="Derive_Results/Metabol_tophit_names_IN_validated.Rdata"))
+Metabol_tophit_names_VN_validated<-Metabol_tophit_names_VN_validated[!Metabol_tophit_names_VN_validated%in%"QI05373_C18_neg"]# QI05373_C18_neg doesnt pass the frist criteria of p.value<0.05
+Metabol_tophit_names_combined<-unique(c(Metabol_tophit_names_IN_validated,Metabol_tophit_names_VN_validated))
+```
+
+```{r}
+Metabolites <- Metabol_tophit_names_combined
+
+dat_top_hit_validate_VN <- subset(TBM_dat_VN,select=c(Metabolites,"age","HIV","ttdeath_2m","evdeath_2m","cohort"))
+dat_top_hit_validate_IN <- subset(TBM_dat_IN,select=c(Metabolites,"age","HIV","ttdeath_2m","evdeath_2m","cohort"))
+
+names(dat_top_hit_validate_VN) <- plyr::mapvalues(names(dat_top_hit_validate_VN), from = names_ID$Metabol_names, to = names_ID$Metabolite)
+names(dat_top_hit_validate_IN) <- plyr::mapvalues(names(dat_top_hit_validate_IN), from = names_ID$Metabol_names, to = names_ID$Metabolite)
+Metabolites <- plyr::mapvalues(Metabolites, from = names_ID$Metabol_names, to = names_ID$Metabolite)
+
+dat_top_hit_validate_VN_2 <- subset(dat_top_hit_validate_VN,select=c(Metabolites,"age","HIV","ttdeath_2m","evdeath_2m"))
+dat_top_hit_validate_IN_2 <- subset(dat_top_hit_validate_IN,select=c(Metabolites,"age","HIV","ttdeath_2m","evdeath_2m"))
+
+t<-list()
+for(i in 1: length(Metabolites)){
+  dat_top_hit<-subset(dat_top_hit_validate_VN_2,select=c(Metabolites[i],"age","HIV","ttdeath_2m","evdeath_2m"))
+    t[[i]]<-coxph(Surv(ttdeath_2m,evdeath_2m)~ .,data=dat_top_hit) %>%  tbl_regression(exponentiate = T,include=Metabolites[i])
+}
+tbl_stack_ex1 <- tbl_stack(t)
+tl1<-tbl_stack_ex1 %>%  bold_p(t = 0.05,q = F) %>% bold_labels()
+
+for(i in 1: length(Metabolites)){
+  dat_top_hit<-subset(dat_top_hit_validate_IN_2,select=c(Metabolites[i],"age","HIV","ttdeath_2m","evdeath_2m"))
+    t[[i]]<-coxph(Surv(ttdeath_2m,evdeath_2m)~ .,data=dat_top_hit) %>%  tbl_regression(exponentiate = T,include=Metabolites[i])
+}
+tbl_stack_ex2 <- tbl_stack(t)
+tl2<-tbl_stack_ex2 %>%bold_p(t = 0.05,q = F) %>% bold_labels()
+
+tbl<-tbl_merge(list(tl1, tl2), tab_spanner = c("Vietnam cohort", "Indonesia cohort")) %>% bold_labels()
+# adding Test for heterogeneity
+
+p_interaction<-list()
+for(i in 1: length(Metabolites)){
+  dat_top_hit<-rbind(subset(dat_top_hit_validate_VN,select=c(Metabolites[i],"age","HIV","ttdeath_2m","evdeath_2m","cohort")),
+                     subset(dat_top_hit_validate_IN,select=c(Metabolites[i],"age","HIV","ttdeath_2m","evdeath_2m","cohort")))
+    p_interaction[[i]]<-round(summary(coxph(Surv(ttdeath_2m,evdeath_2m)~ .+cohort:.-cohort:(age+HIV),data=dat_top_hit))$coefficients[5,"Pr(>|z|)"],4)
+}
+
+(tbl %<>% modify_table_body(
+    ~ .x %>%
+      dplyr::mutate(P_interaction = unlist(p_interaction))
+  ) %>%
+  # assigning header labels
+  modify_header(P_interaction = "Test for heterogeneity",
+                label = "**Metabolites**")%>%
+  bold_labels()%>%
+  as_flex_table() #%>%
+  #flextable::save_as_docx(path=paste0(path_output,"/Table_S1_combined_top_hit_metabolites.docx"),pr_section = sect_properties)
+  )
+```
+
+```{r}
+load(file="Derive_Results/Univariable_results_IN_75_225.Rdata")
+load(file="Derive_Results/Metabol_tophit_names_IN_validated.Rdata")
+
+q_value_within_cohort_validate_IN <- tl1$table_body %>% filter(tl1$table_body$variable%in%Metabol_tophit_names_IN_validated) %>% as.data.frame()
+q_value_external_validate_IN <- tl2$table_body %>% filter(tl2$table_body$variable%in%Metabol_tophit_names_IN_validated)
+
+dat_top_hit_within_cohort_validate_IN <- subset(TBM_dat_IN[index_validation_IN,],select=c(Metabol_tophit_names_IN_validated,"age","HIV","ttdeath_2m","evdeath_2m"))
+dat_top_hit_external_validate_IN <- subset(TBM_dat_VN,select=c(Metabol_tophit_names_IN_validated,"age","HIV","ttdeath_2m","evdeath_2m"))
+dat_top_hit_discovery_IN <- subset(TBM_dat_IN,select=c(Metabol_tophit_names_IN_validated,"age","HIV","ttdeath_2m","evdeath_2m"))
+dat_top_hit_discovery_IN_2 <- subset(TBM_dat_IN,select=c(Metabol_tophit_names_IN_validated,"age","HIV","ttdeath_2m","evdeath_2m","cohort"))
+dat_top_hit_external_validate_IN_2 <- subset(TBM_dat_VN,select=c(Metabol_tophit_names_IN_validated,"age","HIV","ttdeath_2m","evdeath_2m","cohort"))
+
+# Estimate from the within-cohort validation set
+t<-list()
+for(i in 1:length(Metabol_tophit_names_IN_validated)){
+  dat_top_hit<-subset(dat_top_hit_within_cohort_validate_IN,select=c(Metabol_tophit_names_IN_validated[i],"age","HIV","ttdeath_2m","evdeath_2m"))
+  t[[i]]<-coxph(Surv(ttdeath_2m,evdeath_2m)~ .,data=dat_top_hit) %>%  tbl_regression(exponentiate = T,include=Metabol_tophit_names_IN_validated[i])
+}
+tbl_stack_ex1 <- tbl_stack(t)
+tl1<-tbl_stack_ex1
+q_value_within_cohort_validate_IN %<>% slice(order(factor(variable, levels = Metabol_tophit_names_IN_validated))) 
+
+tl1 %<>% modify_table_body(
+    ~ .x %>%
+      dplyr::mutate(q.value = format.pval(q_value_within_cohort_validate_IN$q.value))
+  ) %>%
+  # assigning header labels
+  modify_header(q.value = "q-value",
+                label = "**Metabolites**")%>% bold_p(t = 0.05,q=T) %>% bold_labels()
+
+
+# Estimate from the external validation set
+for(i in 1: length(Metabol_tophit_names_IN_validated)){
+  dat_top_hit<-subset(dat_top_hit_external_validate_IN,select=c(Metabol_tophit_names_IN_validated[i],"age","HIV","ttdeath_2m","evdeath_2m"))
+  t[[i]]<-coxph(Surv(ttdeath_2m,evdeath_2m)~ .,data=dat_top_hit) %>%  tbl_regression(exponentiate = T,include=Metabol_tophit_names_IN_validated[i])
+}
+tbl_stack_ex2 <- tbl_stack(t)
+tl2<-tbl_stack_ex2 
+
+q_value_external_validate_IN %<>% slice(order(factor(variable, levels = Metabol_tophit_names_IN_validated))) 
+
+tl2 %<>% modify_table_body(
+    ~ .x %>%
+      dplyr::mutate(q.value = format.pval(q_value_external_validate_IN$q.value))
+  ) %>%
+  # assigning header labels
+  modify_header(q.value = "q-value",
+                label = "**Metabolites**")%>%
+  bold_p(t = 0.05,q=T) %>% bold_labels()
+
+
+for(i in 1: length(Metabol_tophit_names_IN_validated)){
+  dat_top_hit<-subset(dat_top_hit_discovery_IN,select=c(Metabol_tophit_names_IN_validated[i],"age","HIV","ttdeath_2m","evdeath_2m"))
+  t[[i]]<-coxph(Surv(ttdeath_2m,evdeath_2m)~ .,data=dat_top_hit) %>%  tbl_regression(exponentiate = T,include=Metabol_tophit_names_IN_validated[i])
+}
+tbl_stack_ex3 <- tbl_stack(t)
+tl3<-tbl_stack_ex3  %>%  bold_p(t = 0.05) %>% bold_labels()
+
+# Metabol_tophit_names_IN_validated<-Metabol_tophit_names_IN[which(tl2$table_body$q.value<0.05)]
+tbl<-tbl_merge(list(tl1, tl2,tl3), tab_spanner = c("Within-cohort validation \n (Indonesia)", "External validation\n (Vietnam)", "Discovery cohort \n (Indonesia)")) %>% bold_labels()
+
+p_interaction<-list()
+for(i in 1: length(Metabol_tophit_names_IN_validated)){
+  dat_top_hit<-rbind(subset(dat_top_hit_external_validate_IN_2,select=c(Metabol_tophit_names_IN_validated[i],"age","HIV","ttdeath_2m","evdeath_2m","cohort")),
+                     subset(dat_top_hit_discovery_IN_2,select=c(Metabol_tophit_names_IN_validated[i],"age","HIV","ttdeath_2m","evdeath_2m","cohort")))
+    p_interaction[[i]]<-round(summary(coxph(Surv(ttdeath_2m,evdeath_2m)~ .+cohort:.-cohort:(age+HIV),data=dat_top_hit))$coefficients[5,"Pr(>|z|)"],4)
+}
+tbl
+(tbl %<>% modify_table_body(
+    ~ .x %>%
+      dplyr::mutate(P_interaction = unlist(p_interaction))
+  ) %>%
+  # assigning header labels
+  modify_header(P_interaction = "Test for heterogeneity",
+                label = "**Metabolites**")%>%
+  bold_labels()%>%
+  as_flex_table() #%>%
+  #flextable::save_as_docx(path=paste0(path_output,"/Table_2_Univariable_results_IN_unblind_75_225.docx"),pr_section = sect_properties)
+  )
+```
+
+```{r}
+load("Derive_Results/Metabol_tophit_names_IN_validated.Rdata")
+dat_top_hit_within_cohort_validate_IN <- subset(TBM_dat_IN[index_validation_IN,],select=c(Metabol_tophit_names_IN_validated,"age","HIV","ttdeath_2m","evdeath_2m"))
+dat_top_hit_external_validate_IN <- subset(TBM_dat_VN,select=c(Metabol_tophit_names_IN_validated,"age","HIV","ttdeath_2m","evdeath_2m"))
+dat_top_hit_discovery_IN <- subset(TBM_dat_IN,select=c(Metabol_tophit_names_IN_validated,"age","HIV","ttdeath_2m","evdeath_2m"))
+
+
+t<-list()
+for(i in 1:length(Metabol_tophit_names_IN_validated)){
+  dat_top_hit<-subset(dat_top_hit_validate_IN,select=c(Metabol_tophit_names_IN_validated[i],"age","HIV","ttdeath_2m","evdeath_2m"))
+  t[[i]]<-coxph(Surv(ttdeath_2m,evdeath_2m)~ .,data=dat_top_hit) %>%  tbl_regression(exponentiate = T,include=Metabol_tophit_names_IN_validated[i])
+}
+tbl_stack_ex1 <- tbl_stack(t)
+tl1<-tbl_stack_ex1 %>%   bold_p(t = 0.05,q = TRUE) %>% bold_labels()
+
+for(i in 1: length(Metabol_tophit_names_IN_validated)){
+  dat_top_hit<-subset(dat_top_hit_external_validate_IN,select=c(Metabol_tophit_names_IN_validated[i],"age","HIV","ttdeath_2m","evdeath_2m"))
+  t[[i]]<-coxph(Surv(ttdeath_2m,evdeath_2m)~ .,data=dat_top_hit) %>%  tbl_regression(exponentiate = T,include=Metabol_tophit_names_IN_validated[i])
+}
+tbl_stack_ex2 <- tbl_stack(t)
+tl2<-tbl_stack_ex2 %>%   bold_p(t = 0.05,q = TRUE) %>% bold_labels()
+
+
+for(i in 1: length(Metabol_tophit_names_IN_validated)){
+  dat_top_hit<-subset(dat_top_hit_discovery_IN,select=c(Metabol_tophit_names_IN_validated[i],"age","HIV","ttdeath_2m","evdeath_2m"))
+  t[[i]]<-coxph(Surv(ttdeath_2m,evdeath_2m)~ .,data=dat_top_hit) %>%  tbl_regression(exponentiate = T,include=Metabol_tophit_names_IN_validated[i])
+}
+tbl_stack_ex3 <- tbl_stack(t)
+tl3<-tbl_stack_ex3 %>%   bold_p(t = 0.05,q = TRUE) %>% bold_labels()
+
+# Metabol_tophit_names_IN_validated<-Metabol_tophit_names_IN[which(tl2$table_body$q.value<0.05)]
+tbl<-tbl_merge(list(tl1, tl2,tl3), tab_spanner = c("Within-cohort validation \n (Indonesia)", "External validation\n (Vietnam)", "Discovery cohort \n (Indonesia)")) %>% bold_labels()
+
+tbl
+
+
+
+
+
+save(tl1,tl2,tl3,tbl,file="Results/Univariable_results_IN_75_225.Rdata")
+
+
+tbl %>%
+  as_flex_table() %>%
+  flextable::save_as_docx(path=paste0(path_Onedrive,"/Table_2_Univariable_results_IN_75_225.docx"),pr_section = sect_properties)
+```
+
+
 
 ## Main figures
 
@@ -239,9 +697,9 @@ figure <- annotate_figure(figure,
 figure <- ggarrange(figure, p_leg,ncol=2,nrow=1,widths = c(9, 1))
 
 # Export
-tiff(file=paste0(path_output,"/Figure_1A.tiff"),res=1000, units = 'in', width=30, height =13,compression = 'lzw')
+#tiff(file=paste0(path_output,"/Figure_1A.tiff"),res=1000, units = 'in', width=30, height =13,compression = 'lzw')
 figure
-dev.off()
+#dev.off()
 
 ```
 
