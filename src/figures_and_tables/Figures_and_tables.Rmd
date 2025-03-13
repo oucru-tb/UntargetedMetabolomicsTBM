@@ -518,11 +518,6 @@ tl3<-tbl_stack_ex3 %>%   bold_p(t = 0.05,q = TRUE) %>% bold_labels()
 tbl<-tbl_merge(list(tl1, tl2,tl3), tab_spanner = c("Within-cohort validation \n (Indonesia)", "External validation\n (Vietnam)", "Discovery cohort \n (Indonesia)")) %>% bold_labels()
 
 tbl
-
-
-
-
-
 save(tl1,tl2,tl3,tbl,file="Results/Univariable_results_IN_75_225.Rdata")
 
 
@@ -1632,7 +1627,7 @@ p<-ggplot(data=tmp)+
   #scale_color_manual(values = c("black", "green")) +
   scale_fill_gradientn(guide = "colourbar", 
                        colours = c(colour_scheme_outcome_L, "lightgrey", colour_scheme_outcome_R),
-                       breaks=c(-2,2),
+                       breaks=c(-7,7),
                        labels=c("Higher in NIC","Higher in TBM"), 
                        limits = c(-color_limit, color_limit)) +
   
@@ -1642,24 +1637,28 @@ p<-ggplot(data=tmp)+
                      labels = trans_format("log10", math_format(10^.x)), 
                      name = "Unadjusted p-value")+
   
-  scale_x_continuous(trans=log2_trans(), 
-                     breaks = c(1/32, 1/16, 1/8,1/4,1/2, 1,2,4,8, 16,32), 
-                     labels = c(1/32, 1/16, 1/8,1/4,1/2, 1,2,4,8,16,32),
+  scale_x_continuous(trans=log10_trans(), 
+                     breaks = c(0.001, 0.01, 0.1,1,10, 100,1000), 
+                     labels = c(0.001, 0.01, 0.1,1,10, 100,1000),
                      name = "Ratio TBM vs. Non-infectious control")+
   x_logticks +
   
   geom_vline(xintercept=1, color='black',linewidth=0.2)+
   geom_text_repel(max.overlaps = Inf,
-                  vjust = 0.52,
+                  vjust = 0.62,
                   hjust = 0.52,
                   nudge_x = -0.01,
                   box.padding = 0.5,
+                  #nudge_y = -0.5,
+                  #segment.curvature = -0.1,
+                  #segment.ncp = 3,
+                  #segment.angle = 20,
                   direction = 'both',
                   xlim = c(-Inf, Inf),
                   ylim = c(-2, Inf),
                   lineheight = 1.1,
                   min.segment.length = 0,
-                  size=3,
+                  size=3.5,
                   aes(x=2**Differences,
                       y= pvalue,
                       label=ifelse(Metabolite %in% filter(names_ID,Metabolite %in% Metabolites)$Metabolite,
@@ -1667,7 +1666,7 @@ p<-ggplot(data=tmp)+
   theme_classic()+
   theme(text = element_text(size = 9))+
   theme(legend.position="bottom")+
-  theme(legend.title = element_text(face="bold"))+coord_cartesian(xlim=c(1/4,4))+
+  theme(legend.title = element_text(face="bold"))+coord_cartesian(xlim=c(0.001,1000))+
   theme(axis.title.x = element_text(face="bold", colour="black", size=15),
             axis.title.y = element_text(face="bold", colour="black", size=15),
             axis.text.y = element_text( colour="black", size=15),
@@ -1684,17 +1683,6 @@ p <- p + guides(fill= guide_colorbar(barwidth=panel_height))
 tiff(file=paste0(path_output,"/Figure_S1B.tiff"),res=600, units = 'in', width =8, height =8,compression = 'lzw')
 p
 dev.off()
-
-
-
-#export for Edwin to perform pathway analysis
-TBM_mets_wide_summary$Metabolite_name <- names_ID$Metabolite[match(TBM_mets_wide_summary$Metabolite, names_ID$Metabol_names)]
-
-TBM_mets_wide_summary <- TBM_mets_wide_summary[,c('Metabolite','Metabolite_name','TBM','Control','Differences','pvalue','FDR','Abundance')]
-
-save(TBM_mets_wide_summary,file="metabolites_TBMvsNIC_stats.Rdata")
-
-
 ```
 
 check data: volcano plot TBM vs Other CNS
